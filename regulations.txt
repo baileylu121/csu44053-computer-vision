@@ -1,0 +1,15 @@
+Submission:  Assignments MUST be submitted via Blackboard.
+Assignments submissions MUST be made in the form stipulated (e.g. as a PDF file), providing the stipulated material (e.g. a report and (well indented and easy to understand) code).  Marks will be reduced for work submitted in the wrong format.
+Code must be well formatted (e.g. code must be properly indented).
+Code must be properly written (e.g. well designed with appropriate variable names & comments ).
+All use of Generative AI must be fully documented.  A separate PDF document including full descriptions of all Gen AI usage in all aspects of the assignment (design, coding, testing and report writing) must be submitted.  You will need to include details of the engines used (incl. version) and the specific prompts entered.
+A Git-Hub repository must be used during the development of this assignment (and details of the repository must be provided in you submission).  Commits must be made on a very regular basis (once per day while developing).  This repository may be used to assess how you developed your program.  If you do not use such a repository your marks will be significantly reduced (as there will be no proof that you have done the development work).
+Where requested, output MUST be provided from the program you submit. If no output is given it will be assumed that the program does not work (for assessment purposes).
+Penalties for late submission:   Late submissions are not acceptable and will automatically be docked by up to 5% for every day that they are late.
+Plagiarism:  Note that in submitting any assignment you are in effect declaring that it is all your own work.
+You must not work with anyone else when developing your solution.
+You must not look at work done by anyone else and must not show or provide your work to anyone else.
+You may of course make use of textbooks and web sites to help you but if you do so you MUST reference these publications and sites. You may not directly copy more than 100 words from any other source and if you do so, such quotations must be put in quotation marks.
+Finally you should be aware that plagiarism is regarded by College very seriously. Here are entries from the College Calender:
+"Plagiarism is interpreted by the University as the act of presenting the work of others as one's own work without acknowledgement. Plagiarism is considered as academically fradulent, and an offence against University discipline . The University considers plagiarism to be a major offence, and subject to the disciplinary procedures of the University."
+"The penalties in respect of major offences which may be recommended by the Panel of Enquiry to the Board include reprimand, fine, suspension from academic or other privileges, rustification or expulsion from the University..."
