@@ -7,8 +7,15 @@ void MyApplication() {
 
     cv::Mat image(240, 480, CV_8UC3, cv::Scalar(40, 120, 40));
     cv::circle(image, {120, 120}, 60, cv::Scalar(255, 255, 255), cv::FILLED);
-    cv::putText(image, "Hello, OpenCV", {200, 130}, cv::FONT_HERSHEY_SIMPLEX, 0.8,
-                cv::Scalar(255, 255, 255), 2);
+    cv::putText(
+        image,
+        "Hello, OpenCV",
+        {200, 130},
+        cv::FONT_HERSHEY_SIMPLEX,
+        0.8,
+        cv::Scalar(255, 255, 255),
+        2
+    );
 
     cv::Mat grey;
     cv::Mat edges;

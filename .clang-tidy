@@ -11,3 +11,5 @@ Checks: >
   -readability-identifier-length
 WarningsAsErrors: "*"
 HeaderFilterRegex: ""
+CheckOptions:
+  bugprone-exception-escape.IgnoredExceptions: "format_error"

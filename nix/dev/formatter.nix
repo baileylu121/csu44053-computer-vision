@@ -8,6 +8,7 @@
     settings.global.excludes = [
       "*.envrc"
       "*.envrc."
+      "OpenCVExample/*"
     ];
 
     programs = {

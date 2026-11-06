@@ -1,3 +1,5 @@
 void MyApplication();
 
-int main() { MyApplication(); }
+int main() {
+    MyApplication();
+}

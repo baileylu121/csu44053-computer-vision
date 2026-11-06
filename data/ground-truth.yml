@@ -1,0 +1,131 @@
+%YAML:1.0
+---
+table_rows: 683
+table_cols: 1434
+ball_diameter: 43
+corners:
+  top_left: { row: 35, col: 337 }
+  bottom_left: { row: 472, col: 38 }
+  top_right: { row: 21, col: 1570 }
+  bottom_right: { row: 451, col: 1888 }
+images:
+  - name: "AllBalls.jpeg"
+    balls:
+      - { number: 1, row: 253, col: 908 }
+      - { number: 2, row: 250, col: 959 }
+      - { number: 3, row: 255, col: 1013 }
+      - { number: 4, row: 256, col: 1072 }
+      - { number: 5, row: 254, col: 1132 }
+      - { number: 6, row: 262, col: 1184 }
+      - { number: 7, row: 256, col: 1244 }
+      - { number: 8, row: 253, col: 1307 }
+      - { number: 9, row: 329, col: 901 }
+      - { number: 10, row: 330, col: 961 }
+      - { number: 11, row: 335, col: 1013 }
+      - { number: 12, row: 336, col: 1067 }
+      - { number: 13, row: 334, col: 1130 }
+      - { number: 14, row: 345, col: 1187 }
+      - { number: 15, row: 342, col: 1245 }
+      - { number: 0, row: 293, col: 797 }
+  - name: "Table1.jpeg"
+    balls:
+      - { number: 1, row: 309, col: 1092 }
+      - { number: 2, row: 429, col: 1212 }
+      - { number: 3, row: 383, col: 1131 }
+      - { number: 4, row: 335, col: 1050 }
+      - { number: 5, row: 285, col: 1211 }
+      - { number: 6, row: 261, col: 1170 }
+      - { number: 7, row: 352, col: 1173 }
+      - { number: 8, row: 331, col: 1132 }
+      - { number: 9, row: 240, col: 1210 }
+      - { number: 10, row: 310, col: 1170 }
+      - { number: 11, row: 407, col: 1169 }
+      - { number: 12, row: 281, col: 1135 }
+      - { number: 13, row: 374, col: 1212 }
+      - { number: 14, row: 360, col: 1091 }
+      - { number: 15, row: 331, col: 1213 }
+      - { number: 0, row: 288, col: 29 }
+  - name: "Table2.jpeg"
+    balls:
+      - { number: 1, row: 282, col: 1103 }
+      - { number: 2, row: 620, col: 1224 }
+      - { number: 3, row: 391, col: 1121 }
+      - { number: 4, row: 315, col: 1046 }
+      - { number: 5, row: 310, col: 1305 }
+      - { number: 6, row: 202, col: 621 }
+      - { number: 7, row: 361, col: 1173 }
+      - { number: 8, row: 331, col: 1132 }
+      - { number: 9, row: 177, col: 725 }
+      - { number: 10, row: 185, col: 1269 }
+      - { number: 11, row: 665, col: 798 }
+      - { number: 12, row: 296, col: 438 }
+      - { number: 13, row: 53, col: 1235 }
+      - { number: 14, row: 362, col: 1090 }
+      - { number: 15, row: 399, col: 1205 }
+      - { number: 0, row: 507, col: 1169 }
+  - name: "Table3.jpeg"
+    balls:
+      - { number: 1, row: 23, col: 908 }
+      - { number: 2, row: 616, col: 1224 }
+      - { number: 3, row: 447, col: 1199 }
+      - { number: 4, row: 336, col: 29 }
+      - { number: 5, row: 305, col: 1406 }
+      - { number: 6, row: 210, col: 621 }
+      - { number: 7, row: 260, col: 1294 }
+      - { number: 8, row: 226, col: 1252 }
+      - { number: 9, row: 177, col: 725 }
+      - { number: 10, row: 171, col: 1270 }
+      - { number: 11, row: 665, col: 798 }
+      - { number: 12, row: 249, col: 351 }
+      - { number: 13, row: 53, col: 1233 }
+      - { number: 14, row: 169, col: 901 }
+      - { number: 15, row: 399, col: 1201 }
+      - { number: 0, row: 434, col: 29 }
+  - name: "Table4.jpeg"
+    balls:
+      - { number: 1, row: 23, col: 908 }
+      - { number: 2, row: 546, col: 1407 }
+      - { number: 3, row: 444, col: 1204 }
+      - { number: 5, row: 305, col: 1406 }
+      - { number: 6, row: 210, col: 621 }
+      - { number: 7, row: 260, col: 1294 }
+      - { number: 8, row: 226, col: 1252 }
+      - { number: 9, row: 181, col: 724 }
+      - { number: 10, row: 171, col: 1270 }
+      - { number: 11, row: 665, col: 798 }
+      - { number: 12, row: 249, col: 351 }
+      - { number: 13, row: 58, col: 1231 }
+      - { number: 14, row: 169, col: 901 }
+      - { number: 15, row: 399, col: 1201 }
+      - { number: 0, row: 88, col: 1392 }
+  - name: "Table5.jpeg"
+    balls:
+      - { number: 1, row: 535, col: 23 }
+      - { number: 2, row: 546, col: 1407 }
+      - { number: 3, row: 444, col: 1204 }
+      - { number: 5, row: 305, col: 1406 }
+      - { number: 6, row: 131, col: 25 }
+      - { number: 7, row: 260, col: 1294 }
+      - { number: 8, row: 226, col: 1252 }
+      - { number: 9, row: 538, col: 72 }
+      - { number: 10, row: 171, col: 1270 }
+      - { number: 11, row: 665, col: 798 }
+      - { number: 12, row: 249, col: 351 }
+      - { number: 14, row: 169, col: 901 }
+      - { number: 15, row: 399, col: 1201 }
+      - { number: 0, row: 608, col: 26 }
+  - name: "Table6.jpeg"
+    balls:
+      - { number: 1, row: 535, col: 23 }
+      - { number: 2, row: 477, col: 1364 }
+      - { number: 3, row: 444, col: 1204 }
+      - { number: 5, row: 305, col: 1406 }
+      - { number: 6, row: 131, col: 25 }
+      - { number: 7, row: 260, col: 1294 }
+      - { number: 8, row: 226, col: 1252 }
+      - { number: 9, row: 538, col: 72 }
+      - { number: 10, row: 171, col: 1270 }
+      - { number: 12, row: 249, col: 351 }
+      - { number: 14, row: 169, col: 901 }
+      - { number: 15, row: 399, col: 1201 }
+      - { number: 0, row: 629, col: 947 }
