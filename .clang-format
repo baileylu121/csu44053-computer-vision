@@ -21,4 +21,8 @@ AllowShortIfStatementsOnASingleLine: Never
 AllowShortLoopsOnASingleLine: false
 InsertBraces: true
 SeparateDefinitionBlocks: Always
-FixNamespaceComments: true
+FixNamespaceComments: false
+NamespaceIndentation: All
+WrapNamespaceBodyWithEmptyLines: Never
+PenaltyReturnTypeOnItsOwnLine: 1000
+AllowAllParametersOfDeclarationOnNextLine: false

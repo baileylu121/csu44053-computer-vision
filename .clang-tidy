@@ -13,3 +13,5 @@ WarningsAsErrors: "*"
 HeaderFilterRegex: ""
 CheckOptions:
   bugprone-exception-escape.IgnoredExceptions: "format_error"
+  readability-identifier-naming.GlobalConstantCase: UPPER_CASE
+  readability-identifier-naming.ConstexprVariableCase: UPPER_CASE
