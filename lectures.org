@@ -1,0 +1,17 @@
+:PROPERTIES:
+:ID:       lectures
+:END:
+#+title: Lectures
+
+* Lectures
+
+- [[file:lectures/Binary.pdf][Binary]]
+- [[file:lectures/Edges.pdf][Edges]]
+- [[file:lectures/Features.pdf][Features]]
+- [[file:lectures/Geometric.pdf][Geometric]]
+- [[file:lectures/Histograms.pdf][Histograms]]
+- [[file:lectures/Images.pdf][Images]]
+- [[file:lectures/Introduction.pdf][Introduction]]
+- [[file:lectures/LearningAndEvaluation.pdf][Learning And Evaluation]]
+- [[file:lectures/Region Segmentation.pdf][Region Segmentation]]
+- [[file:lectures/Video.pdf][Video]]

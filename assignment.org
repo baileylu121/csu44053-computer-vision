@@ -1,3 +1,6 @@
+:PROPERTIES:
+:ID:       assignment
+:END:
 #+title: Assignment
 
 * Rules
