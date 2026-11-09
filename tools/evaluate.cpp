@@ -174,7 +174,7 @@ namespace {
             | views::transform([](const auto& pair) {
                    const auto& [distance, score] = pair;
                    return std::format(
-                       "{:>4} px: F1 {}, identified {}",
+                       "{:>5.1f} px: F1 {}, identified {}",
                        distance,
                        reporting::formatF1(score),
                        reporting::formatRatio(score.identified, score.found)
