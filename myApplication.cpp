@@ -20,7 +20,6 @@
 
 namespace {
     namespace fs = std::filesystem;
-
     namespace views = std::views;
 
     template <typename T>
@@ -250,6 +249,13 @@ namespace {
             measureLabDistance(relative).convertTo(contrast, CV_8U);
             return contrast;
         }
+
+        cv::Mat measureRelativeLab(const cv::Mat& smoothed, const cv::Mat& foreground) {
+            cv::Mat lab_image;
+            cv::cvtColor(smoothed, lab_image, cv::COLOR_BGR2Lab);
+            lab_image.convertTo(lab_image, CV_32F);
+            return lab_image - cv::mean(lab_image, ~foreground);
+        }
     }
 
     namespace measurement {
@@ -404,10 +410,6 @@ namespace {
 
             cv::Mat hls;
             cv::cvtColor(smoothed, hls, cv::COLOR_BGR2HLS);
-            cv::Mat lab_image;
-            cv::cvtColor(smoothed, lab_image, cv::COLOR_BGR2Lab);
-            lab_image.convertTo(lab_image, CV_32F);
-
             const cv::Mat outside = maskOutsideBalls(all_balls);
             const cv::Mat cloth_histogram = colour::measureClothHistogram(hls, outside);
             const cv::Mat foreground = colour::segmentNonCloth(hls, cloth_histogram);
@@ -416,7 +418,7 @@ namespace {
             return {
                 .cloth_histogram = cloth_histogram,
                 .cushion_mask = colour::keepBorderComponents(foreground & outside),
-                .cushion_background = lab_image - cv::mean(lab_image, ~foreground),
+                .cushion_background = colour::measureRelativeLab(smoothed, foreground),
                 .foreground = foreground,
                 .ball_size = ball_size,
                 .ball_histograms = measureBallHistograms(all_balls, foreground, ball_size)
@@ -883,9 +885,14 @@ namespace {
                 return std::nullopt;
             }
 
-            return std::ranges::max(plausible, {}, [&](const circles::Circle& circle) {
-                return countNearOutline(points, circle);
-            });
+            const auto scored = plausible
+                | views::transform([&](const circles::Circle& circle) {
+                      return std::pair{countNearOutline(points, circle), circle};
+                  })
+                | std::ranges::to<std::vector>();
+
+            return std::ranges::max(scored, {}, &std::pair<std::ptrdiff_t, circles::Circle>::first)
+                .second;
         }
 
         circles::Circle refineByRansac(const cv::Mat& edges, const circles::Circle& predicted) {
@@ -965,12 +972,7 @@ namespace {
             cv::cvtColor(smoothed, hls, cv::COLOR_BGR2HLS);
             const cv::Mat foreground = colour::segmentNonCloth(hls, measurements.cloth_histogram);
 
-            cv::Mat lab_image;
-            cv::cvtColor(smoothed, lab_image, cv::COLOR_BGR2Lab);
-
-            lab_image.convertTo(lab_image, CV_32F);
-
-            const cv::Mat relative = lab_image - cv::mean(lab_image, ~foreground);
+            const cv::Mat relative = colour::measureRelativeLab(smoothed, foreground);
             const cv::Mat balls = foreground & ~subtractBackground(relative, measurements);
 
             const circles::EdgeImage photo = circles::detectPhotoEdges(relative);
@@ -990,24 +992,18 @@ namespace {
                 | std::ranges::to<std::vector>();
         }
 
-        std::vector<Match> listDetectionMatches(
-            std::size_t detection,
-            const std::vector<double>& distances
-        ) {
-            return views::iota(0UZ, distances.size())
-                | views::transform([&](std::size_t label) {
-                       return Match{
-                           .detection = detection, .label = label, .distance = distances[label]
-                       };
-                   })
-                | std::ranges::to<std::vector>();
-        }
-
         std::vector<Match> rankCandidates(const std::vector<std::vector<double>>& distances) {
             auto candidates = views::iota(0UZ, distances.size())
                 | views::transform([&](std::size_t detection) {
-                                  return listDetectionMatches(detection, distances[detection]);
-                              })
+                      return views::iota(0UZ, distances[detection].size())
+                          | views::transform([&](std::size_t label) {
+                                return Match{
+                                    .detection = detection,
+                                    .label = label,
+                                    .distance = distances[detection][label]
+                                };
+                            });
+                  })
                 | views::join
                 | std::ranges::to<std::vector>();
 
