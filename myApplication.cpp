@@ -10,7 +10,9 @@
 #include <format>
 #include <functional>
 #include <numbers>
+#include <optional>
 #include <print>
+#include <random>
 #include <ranges>
 #include <string>
 #include <utility>
@@ -18,6 +20,7 @@
 
 namespace {
     namespace fs = std::filesystem;
+
     namespace views = std::views;
 
     template <typename T>
@@ -25,79 +28,7 @@ namespace {
 
     constexpr int MAX_PIXEL = 255;
 
-    template <typename Function>
-    class ForEach : public std::ranges::range_adaptor_closure<ForEach<Function>> {
-    public:
-        explicit ForEach(Function function) :
-            function_(std::move(function)) {}
-
-        void operator()(std::ranges::input_range auto&& range) const {
-            std::ranges::for_each(range, function_);
-        }
-
-    private:
-        Function function_;
-    };
-
-    template <typename Function>
-    ForEach<Function> forEach(Function function) {
-        return ForEach<Function>(std::move(function));
-    }
-
-    template <typename Range>
-    using CollectedResults =
-        Result<std::vector<typename std::ranges::range_value_t<Range>::value_type>>;
-
-    class CollectResults : public std::ranges::range_adaptor_closure<CollectResults> {
-    public:
-        template <std::ranges::input_range Range>
-        CollectedResults<Range> operator()(Range&& range) const {
-            auto results = std::forward<Range>(range) | std::ranges::to<std::vector>();
-            const auto failure = std::ranges::find_if(results, [](const auto& result) {
-                return !result.has_value();
-            });
-
-            if (failure != results.end()) {
-                return std::unexpected(failure->error());
-            }
-
-            return results
-                | views::transform([](auto& result) { return std::move(*result); })
-                | std::ranges::to<std::vector>();
-        }
-    };
-
-    inline constexpr CollectResults collectResults;
-
-    struct Match {
-        std::size_t detection = 0;
-        std::size_t label = 0;
-        double distance = 0.0;
-    };
-
-    bool sharesBall(const Match& left, const Match& right) {
-        return left.detection == right.detection || left.label == right.label;
-    }
-
-    std::vector<Match> matchGreedily(const std::vector<Match>& candidates) {
-        return std::ranges::fold_left(
-            candidates,
-            std::vector<Match>{},
-            [](std::vector<Match> matches, const Match& candidate) {
-                if (std::ranges::none_of(matches, std::bind_front(sharesBall, candidate))) {
-                    matches.push_back(candidate);
-                }
-
-                return matches;
-            }
-        );
-    }
-
     namespace table {
-        const fs::path PHOTO_DIRECTORY = "Media/Pool";
-
-        constexpr int BALL_DIAMETER = 43;
-
         struct Ball {
             int number = 0;
             cv::Point2f position;
@@ -108,9 +39,19 @@ namespace {
             std::vector<Ball> balls;
         };
 
-        const cv::Size TABLE_SIZE = {1434, 683};
-
         using Corners = std::array<cv::Point2f, 4>;
+
+        struct Image {
+            std::string name;
+            cv::Mat image;
+            std::vector<Ball> truth;
+        };
+
+        const fs::path PHOTO_DIRECTORY = "Media/Pool";
+
+        constexpr int BALL_DIAMETER = 43;
+
+        const cv::Size TABLE_SIZE = {1434, 683};
 
         const Corners PHOTO_CORNERS = {
             cv::Point2f{337, 35},
@@ -126,12 +67,6 @@ namespace {
             cv::Point2f{0, BOTTOM_RIGHT.y},
             cv::Point2f{BOTTOM_RIGHT.x, 0},
             BOTTOM_RIGHT
-        };
-
-        struct Image {
-            std::string name;
-            cv::Mat image;
-            std::vector<Ball> truth;
         };
 
         Result<cv::Mat> readPhoto(const fs::path& path) {
@@ -168,59 +103,32 @@ namespace {
             const fs::path& directory,
             const std::vector<Photo>& photos
         ) {
-            return photos
-                | views::transform(std::bind_front(loadImage, directory))
-                | collectResults;
+            std::vector<Image> images;
+            for (const auto& photo : photos) {
+                auto image = loadImage(directory, photo);
+                if (!image) {
+                    return std::unexpected(image.error());
+                }
+
+                images.push_back(std::move(*image));
+            }
+            return images;
         }
     }
 
-    namespace detection {
-        const table::Photo REFERENCE_PHOTO = {
-            .name = "AllBalls.jpeg",
-            .balls = {
-                {1, {908, 253}},
-                {2, {959, 250}},
-                {3, {1013, 255}},
-                {4, {1072, 256}},
-                {5, {1132, 254}},
-                {6, {1184, 262}},
-                {7, {1244, 256}},
-                {8, {1307, 253}},
-                {9, {901, 329}},
-                {10, {961, 330}},
-                {11, {1013, 335}},
-                {12, {1067, 336}},
-                {13, {1130, 334}},
-                {14, {1187, 345}},
-                {15, {1245, 342}},
-                {0, {797, 293}}
-            }
-        };
-
+    namespace colour {
         constexpr int SMOOTHING_SIZE = 5;
+        constexpr int HISTOGRAM_SMOOTHING = 3;
+
         constexpr std::array<int, 2> HUE_SATURATION_CHANNELS = {0, 2};
         constexpr std::array<int, 2> HUE_SATURATION_BINS = {16, 16};
         constexpr std::array<float, 2> HUE_RANGE = {0.0F, 180.0F};
         constexpr std::array<float, 2> BYTE_RANGE = {0.0F, MAX_PIXEL + 1.0F};
-        constexpr int CLOTH_MARGIN = table::BALL_DIAMETER * 3 / 2;
-        constexpr int OPENING_SIZE = 5;
-
-        struct BallHistogram {
-            int number = 0;
-            cv::Mat hsv_histogram;
-        };
-
-        struct AllBallsMeasurements {
-            cv::Mat cloth_histogram;
-            cv::Mat cushion_mask;
-            cv::Mat cushion_background;
-            cv::Mat foreground;
-            cv::Size ball_size;
-            std::vector<BallHistogram> ball_histograms;
-        };
 
         constexpr std::array<int, 3> HSV_CHANNELS = {0, 1, 2};
         constexpr std::array<int, 3> HSV_BINS = {16, 8, 8};
+
+        constexpr int OPENING_SIZE = 5;
 
         cv::Mat calculateHsvHistogram(const cv::Mat& hsv, const cv::Mat& mask) {
             std::array<const float*, 3> ranges = {
@@ -234,8 +142,6 @@ namespace {
             return histogram;
         }
 
-        constexpr int HISTOGRAM_SMOOTHING = 3;
-
         cv::Mat smoothHistogram(const cv::Mat& histogram) {
             cv::Mat smoothed;
             cv::GaussianBlur(histogram, smoothed, {HISTOGRAM_SMOOTHING, HISTOGRAM_SMOOTHING}, 0.0);
@@ -243,7 +149,7 @@ namespace {
             return smoothed;
         }
 
-        cv::Mat maskNonCloth(const cv::Mat& hls, const cv::Mat& cloth) {
+        cv::Mat segmentNonCloth(const cv::Mat& hls, const cv::Mat& cloth) {
             std::array<const float*, 2> ranges = {HUE_RANGE.data(), BYTE_RANGE.data()};
             cv::Mat likelihood;
             cv::calcBackProject(
@@ -270,22 +176,124 @@ namespace {
             const int count = cv::connectedComponentsWithStats(mask, labels, stats, centroids);
 
             cv::Mat kept = cv::Mat::zeros(mask.size(), CV_8U);
-            views::iota(1, count) | views::filter([&](int label) {
-                const cv::Rect bounds(
-                    stats.at<int>(label, cv::CC_STAT_LEFT),
-                    stats.at<int>(label, cv::CC_STAT_TOP),
-                    stats.at<int>(label, cv::CC_STAT_WIDTH),
-                    stats.at<int>(label, cv::CC_STAT_HEIGHT)
-                );
-                const cv::Rect interior(cv::Point(1, 1), mask.size() - cv::Size(2, 2));
-                return (bounds & interior) != bounds;
-            }) | forEach([&](int label) { kept.setTo(MAX_PIXEL, labels == label); });
+            std::ranges::for_each(
+                views::iota(1, count) | views::filter([&](int label) {
+                    const cv::Rect bounds(
+                        stats.at<int>(label, cv::CC_STAT_LEFT),
+                        stats.at<int>(label, cv::CC_STAT_TOP),
+                        stats.at<int>(label, cv::CC_STAT_WIDTH),
+                        stats.at<int>(label, cv::CC_STAT_HEIGHT)
+                    );
+                    const cv::Rect interior(cv::Point(1, 1), mask.size() - cv::Size(2, 2));
+                    return (bounds & interior) != bounds;
+                }),
+                [&](int label) { kept.setTo(MAX_PIXEL, labels == label); }
+            );
             return kept;
         }
 
+        auto enumeratePixels(cv::Rect bounds) {
+            return views::cartesian_product(
+                       views::iota(bounds.y, bounds.y + bounds.height),
+                       views::iota(bounds.x, bounds.x + bounds.width)
+                   )
+                | views::transform([](const auto& pair) {
+                       const auto [row, col] = pair;
+                       return cv::Point(col, row);
+                   });
+        }
+
+        cv::Mat maskBallFootprint(cv::Size size, cv::Point2f position, cv::Size ball_size) {
+            cv::Mat region = cv::Mat::zeros(size, CV_8U);
+            cv::ellipse(
+                region,
+                cv::Point(position),
+                ball_size / 2,
+                0.0,
+                0.0,
+                360.0,
+                cv::Scalar(MAX_PIXEL),
+                cv::FILLED
+            );
+            return region;
+        }
+
+        cv::Mat measureClothHistogram(const cv::Mat& hls, const cv::Mat& outside) {
+            std::array<const float*, 2> ranges = {HUE_RANGE.data(), BYTE_RANGE.data()};
+
+            cv::Mat histogram;
+            cv::calcHist(
+                &hls,
+                1,
+                HUE_SATURATION_CHANNELS.data(),
+                outside,
+                histogram,
+                2,
+                HUE_SATURATION_BINS.data(),
+                ranges.data()
+            );
+            return smoothHistogram(histogram);
+        }
+
+        cv::Mat measureLabDistance(const cv::Mat& lab_difference) {
+            std::array<cv::Mat, 3> channels;
+            cv::split(lab_difference, channels.data());
+
+            cv::Mat distance;
+            cv::magnitude(channels[0], channels[1], distance);
+            cv::magnitude(distance, channels[2], distance);
+            return distance;
+        }
+
+        cv::Mat measureClothContrast(const cv::Mat& relative) {
+            cv::Mat contrast;
+            measureLabDistance(relative).convertTo(contrast, CV_8U);
+            return contrast;
+        }
+    }
+
+    namespace measurement {
+        struct BallHistogram {
+            int number = 0;
+            cv::Mat hsv_histogram;
+        };
+
+        struct AllBallsMeasurements {
+            cv::Mat cloth_histogram;
+            cv::Mat cushion_mask;
+            cv::Mat cushion_background;
+            cv::Mat foreground;
+            cv::Size ball_size;
+            std::vector<BallHistogram> ball_histograms;
+        };
+
+        const table::Photo REFERENCE_PHOTO = {
+            .name = "AllBalls.jpeg",
+            .balls = {
+                {1, {908, 253}},
+                {2, {959, 250}},
+                {3, {1013, 255}},
+                {4, {1072, 256}},
+                {5, {1132, 254}},
+                {6, {1184, 262}},
+                {7, {1244, 256}},
+                {8, {1307, 253}},
+                {9, {901, 329}},
+                {10, {961, 330}},
+                {11, {1013, 335}},
+                {12, {1067, 336}},
+                {13, {1130, 334}},
+                {14, {1187, 345}},
+                {15, {1245, 342}},
+                {0, {797, 293}}
+            }
+        };
+
+        constexpr int CLOTH_MARGIN = table::BALL_DIAMETER * 3 / 2;
+
         cv::Mat maskOutsideBalls(const table::Image& all_balls) {
             cv::Mat outside(all_balls.image.size(), CV_8U, cv::Scalar(MAX_PIXEL));
-            all_balls.truth | forEach([&](const table::Ball& ball) {
+            std::ranges::for_each(all_balls.truth, [&](const table::Ball& ball) {
                 cv::circle(
                     outside, cv::Point(ball.position), CLOTH_MARGIN, cv::Scalar(0), cv::FILLED
                 );
@@ -320,8 +328,10 @@ namespace {
                           return measureDiameterAlong(foreground, cv::Point(ball.position), step);
                       })
                     | std::ranges::to<std::vector>();
+
                 const auto middle = extents.begin() + std::ranges::ssize(extents) / 2;
                 std::ranges::nth_element(extents, middle);
+
                 return *middle;
             };
 
@@ -339,65 +349,27 @@ namespace {
             });
         }
 
-        auto enumeratePixels(cv::Rect bounds) {
-            return views::cartesian_product(
-                       views::iota(bounds.y, bounds.y + bounds.height),
-                       views::iota(bounds.x, bounds.x + bounds.width)
-                   )
-                | views::transform([](const auto& pair) {
-                       const auto [row, col] = pair;
-                       return cv::Point(col, row);
-                   });
-        }
-
-        cv::Mat maskBallFootprint(cv::Size size, cv::Point2f position, cv::Size ball_size) {
-            cv::Mat region = cv::Mat::zeros(size, CV_8U);
-            cv::ellipse(
-                region,
-                cv::Point(position),
-                ball_size / 2,
-                0.0,
-                0.0,
-                360.0,
-                cv::Scalar(MAX_PIXEL),
-                cv::FILLED
-            );
-            return region;
-        }
-
         cv::Mat maskOwnBallPixels(
             const cv::Mat& foreground,
             cv::Point2f position,
             const std::vector<cv::Point2f>& positions,
             cv::Size ball_size
         ) {
-            cv::Mat region = maskBallFootprint(foreground.size(), position, ball_size) & foreground;
+            cv::Mat region =
+                colour::maskBallFootprint(foreground.size(), position, ball_size) & foreground;
 
             const cv::Rect bounds =
                 cv::Rect(cv::Point(position) - cv::Point(ball_size / 2), ball_size)
                 & cv::Rect({}, foreground.size());
-            enumeratePixels(bounds) | views::filter([&](cv::Point pixel) {
-                return findNearestCentre(cv::Point2f(pixel), positions, ball_size) != position;
-            }) | forEach([&](cv::Point pixel) { region.at<uchar>(pixel) = 0; });
+
+            std::ranges::for_each(
+                colour::enumeratePixels(bounds) | views::filter([&](cv::Point pixel) {
+                    return findNearestCentre(cv::Point2f(pixel), positions, ball_size) != position;
+                }),
+                [&](cv::Point pixel) { region.at<uchar>(pixel) = 0; }
+            );
 
             return region;
-        }
-
-        cv::Mat measureClothHistogram(const cv::Mat& hls, const cv::Mat& outside) {
-            std::array<const float*, 2> ranges = {HUE_RANGE.data(), BYTE_RANGE.data()};
-
-            cv::Mat histogram;
-            cv::calcHist(
-                &hls,
-                1,
-                HUE_SATURATION_CHANNELS.data(),
-                outside,
-                histogram,
-                2,
-                HUE_SATURATION_BINS.data(),
-                ranges.data()
-            );
-            return smoothHistogram(histogram);
         }
 
         std::vector<BallHistogram> measureBallHistograms(
@@ -406,9 +378,10 @@ namespace {
             cv::Size ball_size
         ) {
             cv::Mat smoothed;
-            cv::medianBlur(all_balls.image, smoothed, SMOOTHING_SIZE);
+            cv::medianBlur(all_balls.image, smoothed, colour::SMOOTHING_SIZE);
             cv::Mat hsv;
             cv::cvtColor(smoothed, hsv, cv::COLOR_BGR2HSV);
+
             const auto positions = all_balls.truth
                 | views::transform(&table::Ball::position)
                 | std::ranges::to<std::vector>();
@@ -419,32 +392,83 @@ namespace {
                            maskOwnBallPixels(foreground, ball.position, positions, ball_size);
                        return BallHistogram{
                            .number = ball.number,
-                           .hsv_histogram = calculateHsvHistogram(hsv, region)
+                           .hsv_histogram = colour::calculateHsvHistogram(hsv, region)
                        };
                    })
                 | std::ranges::to<std::vector>();
         }
 
-        cv::Mat measureLabDistance(const cv::Mat& lab_difference) {
-            std::array<cv::Mat, 3> channels;
-            cv::split(lab_difference, channels.data());
+        AllBallsMeasurements measureAllBallsPhoto(const table::Image& all_balls) {
+            cv::Mat smoothed;
+            cv::medianBlur(all_balls.image, smoothed, colour::SMOOTHING_SIZE);
 
-            cv::Mat distance;
-            cv::magnitude(channels[0], channels[1], distance);
-            cv::magnitude(distance, channels[2], distance);
-            return distance;
+            cv::Mat hls;
+            cv::cvtColor(smoothed, hls, cv::COLOR_BGR2HLS);
+            cv::Mat lab_image;
+            cv::cvtColor(smoothed, lab_image, cv::COLOR_BGR2Lab);
+            lab_image.convertTo(lab_image, CV_32F);
+
+            const cv::Mat outside = maskOutsideBalls(all_balls);
+            const cv::Mat cloth_histogram = colour::measureClothHistogram(hls, outside);
+            const cv::Mat foreground = colour::segmentNonCloth(hls, cloth_histogram);
+            const cv::Size ball_size = measureBallSize(foreground, all_balls.truth);
+
+            return {
+                .cloth_histogram = cloth_histogram,
+                .cushion_mask = colour::keepBorderComponents(foreground & outside),
+                .cushion_background = lab_image - cv::mean(lab_image, ~foreground),
+                .foreground = foreground,
+                .ball_size = ball_size,
+                .ball_histograms = measureBallHistograms(all_balls, foreground, ball_size)
+            };
         }
+    }
 
-        cv::Mat measureClothContrast(const cv::Mat& relative) {
+    namespace circles {
+        struct EdgeImage {
             cv::Mat contrast;
-            measureLabDistance(relative).convertTo(contrast, CV_8U);
-            return contrast;
-        }
+            double canny_threshold = 0.0;
+            cv::Mat edges;
+        };
+
+        struct Circle {
+            cv::Point2d centre;
+            double radius = 0.0;
+        };
 
         const cv::Mat PHOTO_TRANSFORM =
             cv::getPerspectiveTransform(table::TABLE_CORNERS.data(), table::PHOTO_CORNERS.data());
+
         const cv::Mat TABLE_TRANSFORM = PHOTO_TRANSFORM.inv();
         const cv::Rect PHOTO_BOUNDS = cv::boundingRect(table::PHOTO_CORNERS);
+
+        const cv::Mat PHOTO_TABLE = [] {
+            cv::Mat inside;
+            cv::warpPerspective(
+                cv::Mat(table::TABLE_SIZE, CV_8U, cv::Scalar(MAX_PIXEL)),
+                inside,
+                PHOTO_TRANSFORM,
+                PHOTO_BOUNDS.br(),
+                cv::INTER_NEAREST
+            );
+            return inside;
+        }();
+
+        constexpr int GRADIENT_BINS = (4 * MAX_PIXEL) + 1;
+        constexpr std::array<float, 2> GRADIENT_RANGE = {0.0F, float{GRADIENT_BINS}};
+        constexpr double NORMAL_MAD = 0.6745;
+        constexpr double NOISE_SIGMAS = 3.0;
+        constexpr double CANNY_RATIO = 2.0;
+        constexpr int CANNY_APERTURE = 3;
+
+        constexpr double RADIUS_TOLERANCE = 0.2;
+        constexpr double ACCUMULATOR_SPACING = 2.0;
+        constexpr double PEAK_SPACING = 1.0;
+        constexpr double HOUGH_VOTE_FRACTION = 1.0 / 3.0;
+        constexpr int BAND_HEIGHT = table::BALL_DIAMETER;
+
+        constexpr int CUSHION_MARGIN = table::BALL_DIAMETER / 4;
+        constexpr double BALL_FRACTION = 0.5;
 
         cv::Mat warpPerspectiveToPhoto(const cv::Mat& image) {
             cv::Mat photo;
@@ -459,23 +483,6 @@ namespace {
             return photo;
         }
 
-        cv::Mat maskPhotoTable() {
-            cv::Mat inside;
-            cv::warpPerspective(
-                cv::Mat(table::TABLE_SIZE, CV_8U, cv::Scalar(MAX_PIXEL)),
-                inside,
-                PHOTO_TRANSFORM,
-                PHOTO_BOUNDS.br(),
-                cv::INTER_NEAREST
-            );
-            return inside;
-        }
-
-        const cv::Mat PHOTO_TABLE = maskPhotoTable();
-
-        constexpr int GRADIENT_BINS = (4 * MAX_PIXEL) + 1;
-        constexpr std::array<float, 2> GRADIENT_RANGE = {0.0F, float{GRADIENT_BINS}};
-
         cv::Mat countSobelGradients(const cv::Mat& photo, cv::Point order) {
             cv::Mat gradient;
             cv::Sobel(photo, gradient, CV_32F, order.x, order.y);
@@ -489,36 +496,28 @@ namespace {
             return counts;
         }
 
-        constexpr double NORMAL_MAD = 0.6745;
-
         double estimateMadNoise(const cv::Mat& photo) {
             const cv::Mat counts =
                 countSobelGradients(photo, {1, 0}) + countSobelGradients(photo, {0, 1});
+
             const double half = cv::sum(counts)[0] / 2.0;
+
             const int median =
                 *std::ranges::partition_point(views::iota(0, counts.rows), [&](int bin) {
                     return cv::sum(counts.rowRange(0, bin + 1))[0] < half;
                 });
+
             return median / NORMAL_MAD;
         }
 
-        constexpr double NOISE_SIGMAS = 3.0;
-        constexpr double CANNY_RATIO = 2.0;
-
         double chooseCannyThreshold(const cv::Mat& photo) {
             cv::Mat binary;
+
             const double otsu =
                 cv::threshold(photo, binary, 0.0, MAX_PIXEL, cv::THRESH_BINARY | cv::THRESH_OTSU);
+
             return std::max(otsu, CANNY_RATIO * NOISE_SIGMAS * estimateMadNoise(photo));
         }
-
-        constexpr int CANNY_APERTURE = 3;
-
-        struct EdgeImage {
-            cv::Mat contrast;
-            double canny_threshold = 0.0;
-            cv::Mat edges;
-        };
 
         EdgeImage detectCannyEdges(const cv::Mat& contrast) {
             const double canny_threshold = chooseCannyThreshold(contrast);
@@ -527,6 +526,7 @@ namespace {
             cv::Canny(
                 contrast, edges, canny_threshold / CANNY_RATIO, canny_threshold, CANNY_APERTURE
             );
+
             return {.contrast = contrast, .canny_threshold = canny_threshold, .edges = edges};
         }
 
@@ -559,8 +559,6 @@ namespace {
             };
         }
 
-        constexpr double RADIUS_TOLERANCE = 0.2;
-
         std::pair<int, int> measureRadiusRange(const cv::Rect& band) {
             const auto radii = listCorners(band) | views::transform(measurePhotoRadius);
             return {
@@ -578,11 +576,6 @@ namespace {
                 & cv::Rect({}, PHOTO_BOUNDS.br());
         }
 
-        struct Circle {
-            cv::Point2d centre;
-            double radius = 0.0;
-        };
-
         Circle projectBallOutline(cv::Point2d centre) {
             return {.centre = centre, .radius = measurePhotoRadius(mapToTable(centre))};
         }
@@ -591,12 +584,9 @@ namespace {
             return 2.0 * std::numbers::pi * radius;
         }
 
-        constexpr double ACCUMULATOR_SPACING = 2.0;
-        constexpr double PEAK_SPACING = 1.0;
-        constexpr double HOUGH_VOTE_FRACTION = 1.0 / 3.0;
-
         std::vector<Circle> findHoughCircles(const EdgeImage& photo, const cv::Rect& band) {
             const auto [minimum_radius, maximum_radius] = measureRadiusRange(band);
+
             const cv::Rect region = measurePhotoRegion(band, maximum_radius);
             const cv::Rect window = {
                 band.tl() - cv::Point(0, band.height / 2), band.size() + cv::Size(0, band.height)
@@ -626,8 +616,6 @@ namespace {
                 | std::ranges::to<std::vector>();
         }
 
-        constexpr int BAND_HEIGHT = table::BALL_DIAMETER;
-
         std::vector<Circle> scanHoughBands(const EdgeImage& photo) {
             return views::iota(0, table::TABLE_SIZE.height)
                 | views::stride(BAND_HEIGHT)
@@ -639,31 +627,19 @@ namespace {
                 | std::ranges::to<std::vector>();
         }
 
-        constexpr int CUSHION_MARGIN = table::BALL_DIAMETER / 4;
-
         bool clearsCushions(const Circle& circle) {
             const cv::Point margin = {CUSHION_MARGIN, CUSHION_MARGIN};
             return cv::Rect(margin, cv::Point(table::TABLE_SIZE) - margin)
                 .contains(cv::Point(mapToTable(circle.centre)));
         }
 
-        constexpr double CLOTH_SPREAD = 10.3;
-        constexpr double CHANGE_DISTANCE = NOISE_SIGMAS * CLOTH_SPREAD;
-
-        cv::Mat subtractBackground(const cv::Mat& relative, const AllBallsMeasurements& measurements) {
-            const cv::Mat distance = measureLabDistance(relative - measurements.cushion_background);
-            return measurements.cushion_mask & (distance <= CHANGE_DISTANCE);
-        }
-
-        constexpr double BALL_FRACTION = 0.5;
-
-        bool coversBall(const Circle& circle, const cv::Mat& balls, cv::Size ball_size) {
+        bool isMostlyBallFootprint(const Circle& circle, const cv::Mat& balls, cv::Size ball_size) {
             const cv::Mat region =
-                maskBallFootprint(balls.size(), mapToTable(circle.centre), ball_size);
+                colour::maskBallFootprint(balls.size(), mapToTable(circle.centre), ball_size);
             return cv::mean(balls, region)[0] >= BALL_FRACTION * MAX_PIXEL;
         }
 
-        std::vector<Circle> verifyCircles(
+        std::vector<Circle> keepCirclesOverBalls(
             const std::vector<Circle>& circles,
             const cv::Mat& balls,
             cv::Size ball_size
@@ -671,57 +647,96 @@ namespace {
             return circles
                 | views::filter(clearsCushions)
                 | views::filter([&](const Circle& circle) {
-                       return coversBall(circle, balls, ball_size);
+                       return isMostlyBallFootprint(circle, balls, ball_size);
                    })
                 | std::ranges::to<std::vector>();
         }
 
-        constexpr double CANDIDATE_TOLERANCE = ACCUMULATOR_SPACING;
+        EdgeImage detectPhotoEdges(const cv::Mat& relative) {
+            cv::Mat blurred;
+            cv::GaussianBlur(
+                warpPerspectiveToPhoto(colour::measureClothContrast(relative)),
+                blurred,
+                {colour::SMOOTHING_SIZE, colour::SMOOTHING_SIZE},
+                0.0
+            );
+            return detectCannyEdges(blurred);
+        }
+    }
 
-        double measureOutlineCoverage(const Circle& circle, const cv::Mat& distances) {
+    namespace refinement {
+        constexpr double CANDIDATE_TOLERANCE = circles::ACCUMULATOR_SPACING;
+        constexpr float CENTRE_SPACING = 0.8F * table::BALL_DIAMETER;
+        constexpr double MIN_OUTLINE_COVERAGE = 1.0 / 3.0;
+
+        constexpr std::size_t MINIMAL_SAMPLE_SIZE = 3;
+        constexpr double FIT_TOLERANCE = 1.5;
+        constexpr double RANSAC_CONFIDENCE = 0.99;
+        constexpr double INLIER_RATIO = 0.2;
+        constexpr std::mt19937::result_type RANSAC_SEED = 43;
+
+        const int RANSAC_ITERATIONS = cvCeil(
+            std::log(1.0 - RANSAC_CONFIDENCE)
+            / std::log(1.0 - std::pow(INLIER_RATIO, MINIMAL_SAMPLE_SIZE))
+        );
+
+        using MinimalSample = std::array<cv::Point2d, MINIMAL_SAMPLE_SIZE>;
+
+        double measureOutlineCoverage(const circles::Circle& circle, const cv::Mat& distances) {
             const cv::Rect bounds({}, distances.size());
-            const int samples = cvCeil(measureCircumference(circle.radius));
+            const int samples = cvCeil(circles::measureCircumference(circle.radius));
+
             const auto covered = std::ranges::count_if(views::iota(0, samples), [&](int sample) {
                 const double angle = 2.0 * std::numbers::pi * sample / samples;
+
                 const cv::Point point =
                     circle.centre + cv::Point2d(std::cos(angle), std::sin(angle)) * circle.radius;
+
                 return bounds.contains(point) && distances.at<float>(point) <= CANDIDATE_TOLERANCE;
             });
+
             return static_cast<double>(covered) / samples;
         }
 
-        void eraseOutline(cv::Mat& edges, const Circle& circle) {
-            const double reach = circle.radius + CANDIDATE_TOLERANCE;
-            const cv::Point2d corner(reach, reach);
-            const cv::Rect bounds = cv::Rect(circle.centre - corner, circle.centre + corner)
-                & cv::Rect({}, edges.size());
-            enumeratePixels(bounds) | views::filter([&](cv::Point pixel) {
-                const double residual = cv::norm(cv::Point2d(pixel) - circle.centre) - circle.radius;
-                return std::abs(residual) <= CANDIDATE_TOLERANCE;
-            }) | forEach([&](cv::Point pixel) { edges.at<uchar>(pixel) = 0; });
+        double measureDistanceToOutline(const circles::Circle& circle, cv::Point2d point) {
+            return std::abs(cv::norm(point - circle.centre) - circle.radius);
         }
 
-        constexpr float CENTRE_SPACING = 0.8F * table::BALL_DIAMETER;
+        cv::Rect boundCircle(const circles::Circle& circle, double reach, cv::Size size) {
+            const cv::Point2d corner = cv::Point2d(1.0, 1.0) * reach;
+            return cv::Rect(circle.centre - corner, circle.centre + corner) & cv::Rect({}, size);
+        }
 
-        constexpr double MIN_OUTLINE_COVERAGE = 1.0 / 3.0;
+        void eraseOutline(cv::Mat& edges, const circles::Circle& circle) {
+            const cv::Rect bounds =
+                boundCircle(circle, circle.radius + CANDIDATE_TOLERANCE, edges.size());
+
+            std::ranges::for_each(
+                colour::enumeratePixels(bounds) | views::filter([&](cv::Point pixel) {
+                    return measureDistanceToOutline(circle, pixel) <= CANDIDATE_TOLERANCE;
+                }),
+                [&](cv::Point pixel) { edges.at<uchar>(pixel) = 0; }
+            );
+        }
 
         std::vector<double> measureCoverages(
             const cv::Mat& edges,
-            const std::vector<Circle>& candidates
+            const std::vector<circles::Circle>& candidates
         ) {
             cv::Mat distances;
             cv::distanceTransform(edges == 0, distances, cv::DIST_L2, cv::DIST_MASK_PRECISE);
+
             return candidates
                 | views::transform(std::bind_back(measureOutlineCoverage, distances))
                 | std::ranges::to<std::vector>();
         }
 
-        std::vector<Circle> selectExplainingAway(
+        std::vector<circles::Circle> selectExplainingAway(
             const cv::Mat& edges,
-            std::vector<Circle> candidates
+            std::vector<circles::Circle> candidates
         ) {
             cv::Mat remaining = edges.clone();
-            std::vector<Circle> accepted;
+            std::vector<circles::Circle> accepted;
 
             while (!candidates.empty()) {
                 const auto coverages = measureCoverages(remaining, candidates);
@@ -731,12 +746,17 @@ namespace {
                     break;
                 }
 
-                const Circle chosen = candidates[std::ranges::distance(coverages.begin(), best)];
+                const circles::Circle chosen =
+                    candidates[std::ranges::distance(coverages.begin(), best)];
+
                 accepted.push_back(chosen);
                 eraseOutline(remaining, chosen);
 
-                std::erase_if(candidates, [&](const Circle& candidate) {
-                    return cv::norm(mapToTable(candidate.centre) - mapToTable(chosen.centre))
+                std::erase_if(candidates, [&](const circles::Circle& candidate) {
+                    return cv::norm(
+                               circles::mapToTable(candidate.centre)
+                               - circles::mapToTable(chosen.centre)
+                           )
                         < CENTRE_SPACING;
                 });
             }
@@ -744,40 +764,229 @@ namespace {
             return accepted;
         }
 
-        EdgeImage detectPhotoEdges(const cv::Mat& relative) {
-            cv::Mat blurred;
-            cv::GaussianBlur(
-                warpPerspectiveToPhoto(measureClothContrast(relative)),
-                blurred,
-                {SMOOTHING_SIZE, SMOOTHING_SIZE},
-                0.0
+        std::vector<cv::Point2d> collectOutlinePoints(
+            const cv::Mat& edges,
+            const circles::Circle& circle
+        ) {
+            const double margin = circles::RADIUS_TOLERANCE * circle.radius;
+            const cv::Rect bounds = boundCircle(circle, circle.radius + margin, edges.size());
+
+            std::vector<cv::Point> pixels;
+            cv::findNonZero(edges(bounds), pixels);
+
+            return pixels
+                | views::transform([&](cv::Point pixel) {
+                       return cv::Point2d(pixel + bounds.tl());
+                   })
+                | views::filter([&](cv::Point2d point) {
+                       return measureDistanceToOutline(circle, point) <= margin;
+                   })
+                | std::ranges::to<std::vector>();
+        }
+
+        MinimalSample pickRandomTriple(
+            const std::vector<cv::Point2d>& points,
+            std::mt19937& generator
+        ) {
+            std::uniform_int_distribution<std::size_t> pick(0, points.size() - 1);
+            MinimalSample sample;
+
+            std::ranges::generate(sample, [&] { return points[pick(generator)]; });
+
+            return sample;
+        }
+
+        std::optional<circles::Circle> circleThroughTriple(const MinimalSample& corners) {
+            const cv::Point2d first = corners[1] - corners[0];
+            const cv::Point2d second = corners[2] - corners[0];
+            const double determinant = 2.0 * first.cross(second);
+
+            if (determinant == 0.0) {
+                return std::nullopt;
+            }
+
+            const cv::Point2d centre =
+                cv::Point2d(
+                    (second.y * first.dot(first)) - (first.y * second.dot(second)),
+                    (first.x * second.dot(second)) - (second.x * first.dot(first))
+                )
+                / determinant;
+
+            return circles::Circle{.centre = corners[0] + centre, .radius = cv::norm(centre)};
+        }
+
+        std::optional<circles::Circle> fitCircleLeastSquares(
+            const std::vector<cv::Point2d>& points,
+            cv::Point2d origin
+        ) {
+            const auto equations =
+                points
+                | views::transform([&](cv::Point2d point) {
+                      const cv::Point2d offset = point - origin;
+                      return cv::Vec4d{offset.x, offset.y, 1.0, -offset.dot(offset)};
+                  })
+                | std::ranges::to<std::vector>();
+
+            const cv::Mat system = cv::Mat(equations, false).reshape(1);
+
+            cv::Mat solution;
+            if (!cv::solve(system.colRange(0, 3), system.col(3), solution, cv::DECOMP_SVD)) {
+                return std::nullopt;
+            }
+
+            const cv::Point2d centre(-solution.at<double>(0) / 2.0, -solution.at<double>(1) / 2.0);
+            const double squared_radius = centre.dot(centre) - solution.at<double>(2);
+            if (squared_radius <= 0.0) {
+                return std::nullopt;
+            }
+
+            return circles::Circle{.centre = origin + centre, .radius = std::sqrt(squared_radius)};
+        }
+
+        bool isNearOutline(const circles::Circle& circle, cv::Point2d point) {
+            return measureDistanceToOutline(circle, point) <= FIT_TOLERANCE;
+        }
+
+        std::ptrdiff_t countNearOutline(
+            const std::vector<cv::Point2d>& points,
+            const circles::Circle& circle
+        ) {
+            return std::ranges::count_if(points, std::bind_front(isNearOutline, circle));
+        }
+
+        bool hasPlausibleRadius(const circles::Circle& fit, const circles::Circle& predicted) {
+            return std::abs(fit.radius - predicted.radius)
+                <= circles::RADIUS_TOLERANCE
+                * predicted.radius;
+        }
+
+        std::optional<circles::Circle> findConsensusCircle(
+            const std::vector<cv::Point2d>& points,
+            const circles::Circle& predicted
+        ) {
+            std::mt19937 generator(RANSAC_SEED);
+
+            const auto hypotheses =
+                views::iota(0, RANSAC_ITERATIONS)
+                | views::transform([&](int) {
+                      return circleThroughTriple(pickRandomTriple(points, generator));
+                  })
+                | std::ranges::to<std::vector>();
+
+            const auto plausible = hypotheses
+                | views::filter([](const auto& hypothesis) { return hypothesis.has_value(); })
+                | views::transform([](const auto& hypothesis) { return *hypothesis; })
+                | views::filter(std::bind_back(hasPlausibleRadius, predicted))
+                | std::ranges::to<std::vector>();
+
+            if (plausible.empty()) {
+                return std::nullopt;
+            }
+
+            return std::ranges::max(plausible, {}, [&](const circles::Circle& circle) {
+                return countNearOutline(points, circle);
+            });
+        }
+
+        circles::Circle refineByRansac(const cv::Mat& edges, const circles::Circle& predicted) {
+            const auto points = collectOutlinePoints(edges, predicted);
+            const int required =
+                cvCeil(MIN_OUTLINE_COVERAGE * circles::measureCircumference(predicted.radius));
+
+            if (std::ranges::ssize(points) < required) {
+                return predicted;
+            }
+
+            return findConsensusCircle(points, predicted)
+                .and_then([&](const circles::Circle& consensus) {
+                    const auto inliers = points
+                        | views::filter(std::bind_front(isNearOutline, consensus))
+                        | std::ranges::to<std::vector>();
+
+                    return fitCircleLeastSquares(inliers, predicted.centre);
+                })
+                .and_then([&](const circles::Circle& fit) {
+                    const bool confirmed = hasPlausibleRadius(fit, predicted)
+                        && countNearOutline(points, fit)
+                        >= required;
+
+                    return confirmed ? std::optional(fit) : std::nullopt;
+                })
+                .value_or(predicted);
+        }
+    }
+
+    namespace detection {
+        struct Match {
+            std::size_t detection = 0;
+            std::size_t label = 0;
+            double distance = 0.0;
+        };
+
+        constexpr double CLOTH_SPREAD = 10.3;
+        constexpr double CHANGE_DISTANCE = circles::NOISE_SIGMAS * CLOTH_SPREAD;
+
+        bool sharesBall(const Match& left, const Match& right) {
+            return left.detection == right.detection || left.label == right.label;
+        }
+
+        std::vector<Match> matchGreedily(const std::vector<Match>& candidates) {
+            return std::ranges::fold_left(
+                candidates,
+                std::vector<Match>{},
+                [](std::vector<Match> matches, const Match& candidate) {
+                    if (std::ranges::none_of(matches, std::bind_front(sharesBall, candidate))) {
+                        matches.push_back(candidate);
+                    }
+
+                    return matches;
+                }
             );
-            return detectCannyEdges(blurred);
+        }
+
+        cv::Mat subtractBackground(
+            const cv::Mat& relative,
+            const measurement::AllBallsMeasurements& measurements
+        ) {
+            const cv::Mat distance =
+                colour::measureLabDistance(relative - measurements.cushion_background);
+
+            return measurements.cushion_mask & (distance <= CHANGE_DISTANCE);
         }
 
         std::vector<cv::Point2f> locateBalls(
             const table::Image& table,
-            const AllBallsMeasurements& measurements
+            const measurement::AllBallsMeasurements& measurements
         ) {
             cv::Mat smoothed;
-            cv::medianBlur(table.image, smoothed, SMOOTHING_SIZE);
+            cv::medianBlur(table.image, smoothed, colour::SMOOTHING_SIZE);
 
             cv::Mat hls;
             cv::cvtColor(smoothed, hls, cv::COLOR_BGR2HLS);
-            const cv::Mat foreground = maskNonCloth(hls, measurements.cloth_histogram);
+            const cv::Mat foreground = colour::segmentNonCloth(hls, measurements.cloth_histogram);
 
-            cv::Mat lab;
-            cv::cvtColor(smoothed, lab, cv::COLOR_BGR2Lab);
-            lab.convertTo(lab, CV_32F);
-            const cv::Mat relative = lab - cv::mean(lab, ~foreground);
+            cv::Mat lab_image;
+            cv::cvtColor(smoothed, lab_image, cv::COLOR_BGR2Lab);
+
+            lab_image.convertTo(lab_image, CV_32F);
+
+            const cv::Mat relative = lab_image - cv::mean(lab_image, ~foreground);
             const cv::Mat balls = foreground & ~subtractBackground(relative, measurements);
 
-            const EdgeImage photo = detectPhotoEdges(relative);
-            return selectExplainingAway(
-                    photo.edges,
-                    verifyCircles(scanHoughBands(photo), balls, measurements.ball_size)
+            const circles::EdgeImage photo = circles::detectPhotoEdges(relative);
+
+            return refinement::selectExplainingAway(
+                       photo.edges,
+                       circles::keepCirclesOverBalls(
+                           circles::scanHoughBands(photo), balls, measurements.ball_size
+                       )
+                   )
+                | views::transform(
+                       std::bind_front(refinement::refineByRansac, std::cref(photo.edges))
                 )
-                | views::transform([](const Circle& circle) { return mapToTable(circle.centre); })
+                | views::transform([](const circles::Circle& circle) {
+                       return circles::mapToTable(circle.centre);
+                   })
                 | std::ranges::to<std::vector>();
         }
 
@@ -815,17 +1024,21 @@ namespace {
         std::vector<std::size_t> assignGreedily(const std::vector<std::vector<double>>& distances) {
             auto labels =
                 distances | views::transform(findNearestHistogram) | std::ranges::to<std::vector>();
-            matchGreedily(rankCandidates(distances))
-                | forEach([&](const Match& match) { labels[match.detection] = match.label; });
+
+            std::ranges::for_each(
+                matchGreedily(rankCandidates(distances)),
+                [&](const Match& match) { labels[match.detection] = match.label; }
+            );
+
             return labels;
         }
 
         std::vector<double> measureBhattacharyyaDistances(
             const cv::Mat& histogram,
-            const std::vector<BallHistogram>& ball_histograms
+            const std::vector<measurement::BallHistogram>& ball_histograms
         ) {
             return ball_histograms
-                | views::transform([&](const BallHistogram& ball) {
+                | views::transform([&](const measurement::BallHistogram& ball) {
                        return cv::compareHist(
                            histogram, ball.hsv_histogram, cv::HISTCMP_BHATTACHARYYA
                        );
@@ -836,29 +1049,35 @@ namespace {
         std::vector<table::Ball> identifyBalls(
             const table::Image& table,
             const std::vector<cv::Point2f>& positions,
-            const AllBallsMeasurements& measurements
+            const measurement::AllBallsMeasurements& measurements
         ) {
             cv::Mat smoothed;
-            cv::medianBlur(table.image, smoothed, SMOOTHING_SIZE);
+            cv::medianBlur(table.image, smoothed, colour::SMOOTHING_SIZE);
 
             cv::Mat hsv;
             cv::cvtColor(smoothed, hsv, cv::COLOR_BGR2HSV);
+
             cv::Mat hls;
             cv::cvtColor(smoothed, hls, cv::COLOR_BGR2HLS);
-            const cv::Mat foreground = maskNonCloth(hls, measurements.cloth_histogram);
+
+            const cv::Mat foreground = colour::segmentNonCloth(hls, measurements.cloth_histogram);
 
             const auto measureDistancesToBalls = [&](cv::Point2f position) {
-                const cv::Mat region =
-                    maskOwnBallPixels(foreground, position, positions, measurements.ball_size);
+                const cv::Mat region = measurement::maskOwnBallPixels(
+                    foreground, position, positions, measurements.ball_size
+                );
+
                 return measureBhattacharyyaDistances(
-                    calculateHsvHistogram(hsv, region), measurements.ball_histograms
+                    colour::calculateHsvHistogram(hsv, region), measurements.ball_histograms
                 );
             };
+
             const auto distances = positions
                 | views::transform(measureDistancesToBalls)
                 | std::ranges::to<std::vector>();
 
             const auto labels = assignGreedily(distances);
+
             return views::zip(positions, labels)
                 | views::transform([&](const auto& pair) {
                        const auto [position, label] = pair;
@@ -870,41 +1089,23 @@ namespace {
                 | std::ranges::to<std::vector>();
         }
 
-        AllBallsMeasurements measureAllBallsPhoto(const table::Image& all_balls) {
-            cv::Mat smoothed;
-            cv::medianBlur(all_balls.image, smoothed, SMOOTHING_SIZE);
-
-            cv::Mat hls;
-            cv::cvtColor(smoothed, hls, cv::COLOR_BGR2HLS);
-            cv::Mat lab;
-            cv::cvtColor(smoothed, lab, cv::COLOR_BGR2Lab);
-            lab.convertTo(lab, CV_32F);
-
-            const cv::Mat outside = maskOutsideBalls(all_balls);
-            const cv::Mat cloth_histogram = measureClothHistogram(hls, outside);
-            const cv::Mat foreground = maskNonCloth(hls, cloth_histogram);
-            const cv::Size ball_size = measureBallSize(foreground, all_balls.truth);
-
-            return {
-                .cloth_histogram = cloth_histogram,
-                .cushion_mask = keepBorderComponents(foreground & outside),
-                .cushion_background = lab - cv::mean(lab, ~foreground),
-                .foreground = foreground,
-                .ball_size = ball_size,
-                .ball_histograms = measureBallHistograms(all_balls, foreground, ball_size)
-            };
-        }
-
         std::vector<table::Ball> detectBalls(
             const table::Image& table,
-            const AllBallsMeasurements& measurements
+            const measurement::AllBallsMeasurements& measurements
         ) {
             const auto positions = locateBalls(table, measurements);
             return identifyBalls(table, positions, measurements);
         }
     }
 
-    namespace evaluation {
+    namespace scoring {
+        struct Score {
+            std::ptrdiff_t labelled = 0;
+            std::ptrdiff_t found = 0;
+            std::ptrdiff_t false_detections = 0;
+            std::ptrdiff_t identified = 0;
+        };
+
         const std::vector<table::Photo> TABLE_PHOTOS = {
             {.name = "Table1.jpeg",
              .balls =
@@ -1013,14 +1214,7 @@ namespace {
 
         constexpr std::array<float, 3> MATCH_DISTANCES = {5.0F, 8.0F, 11.4F};
 
-        struct Score {
-            std::ptrdiff_t labelled = 0;
-            std::ptrdiff_t found = 0;
-            std::ptrdiff_t false_detections = 0;
-            std::ptrdiff_t identified = 0;
-        };
-
-        Score operator+(const Score& left, const Score& right) {
+        Score addScores(const Score& left, const Score& right) {
             return {
                 .labelled = left.labelled + right.labelled,
                 .found = left.found + right.found,
@@ -1029,7 +1223,7 @@ namespace {
             };
         }
 
-        std::vector<Match> listCandidates(
+        std::vector<detection::Match> listCandidates(
             const std::vector<table::Ball>& detected,
             const std::vector<table::Ball>& truth,
             float match_distance
@@ -1040,30 +1234,34 @@ namespace {
                 )
                 | views::transform([&](const auto& pair) {
                       const auto [detection, label] = pair;
-                      return Match{
+                      return detection::Match{
                           .detection = detection,
                           .label = label,
                           .distance = cv::norm(detected[detection].position - truth[label].position)
                       };
                   })
-                | views::filter([&](const Match& match) { return match.distance < match_distance; })
+                | views::filter([&](const detection::Match& match) {
+                      return match.distance < match_distance;
+                  })
                 | std::ranges::to<std::vector>();
 
-            std::ranges::sort(candidates, {}, &Match::distance);
+            std::ranges::sort(candidates, {}, &detection::Match::distance);
+
             return candidates;
         }
 
         Score tallyScore(
-            const std::vector<Match>& matches,
+            const std::vector<detection::Match>& matches,
             const std::vector<table::Ball>& detected,
             const std::vector<table::Ball>& truth
         ) {
             const auto found = std::ranges::ssize(matches);
+
             return {
                 .labelled = std::ranges::ssize(truth),
                 .found = found,
                 .false_detections = std::ranges::ssize(detected) - found,
-                .identified = std::ranges::count_if(matches, [&](const Match& match) {
+                .identified = std::ranges::count_if(matches, [&](const detection::Match& match) {
                     return detected[match.detection].number == truth[match.label].number;
                 })
             };
@@ -1075,7 +1273,7 @@ namespace {
             float match_distance
         ) {
             const auto matches =
-                matchGreedily(listCandidates(detected, table.truth, match_distance));
+                detection::matchGreedily(listCandidates(detected, table.truth, match_distance));
 
             return tallyScore(matches, detected, table.truth);
         }
@@ -1096,12 +1294,14 @@ namespace {
                 scores,
                 std::vector<Score>(MATCH_DISTANCES.size()),
                 [](const std::vector<Score>& total, const std::vector<Score>& table_scores) {
-                    return views::zip_transform(std::plus{}, total, table_scores)
+                    return views::zip_transform(addScores, total, table_scores)
                         | std::ranges::to<std::vector>();
                 }
             );
         }
+    }
 
+    namespace reporting {
         std::string formatRatio(std::ptrdiff_t numerator, std::ptrdiff_t denominator) {
             if (denominator == 0) {
                 return "n/a";
@@ -1112,13 +1312,13 @@ namespace {
             );
         }
 
-        std::string formatF1(const Score& score) {
+        std::string formatF1(const scoring::Score& score) {
             return formatRatio(
                 2 * score.found, score.found + score.labelled + score.false_detections
             );
         }
 
-        std::string formatScore(const Score& score) {
+        std::string formatScore(const scoring::Score& score) {
             return std::format(
                 "found {}/{}, missed {}, false detections {}, precision {}, recall {}, F1 {}, "
                 "identified {}",
@@ -1133,17 +1333,19 @@ namespace {
             );
         }
 
-        void printScores(const std::vector<Score>& scores) {
-            views::zip(MATCH_DISTANCES, scores) | forEach([](const auto& pair) {
-                const auto& [distance, score] = pair;
-                std::println("  within {:>4} px: {}", distance, formatScore(score));
-            });
+        void printScores(const std::vector<scoring::Score>& scores) {
+            std::ranges::for_each(
+                views::zip(scoring::MATCH_DISTANCES, scores), [](const auto& pair) {
+                    const auto& [distance, score] = pair;
+                    std::println("  within {:>4} px: {}", distance, formatScore(score));
+                }
+            );
         }
 
         void printResults(
             const table::Image& table,
             const std::vector<table::Ball>& detected,
-            const std::vector<Score>& scores
+            const std::vector<scoring::Score>& scores
         ) {
             std::println("{}", table.name);
 
@@ -1151,7 +1353,7 @@ namespace {
                 std::println("  no balls detected");
             }
 
-            detected | forEach([](const table::Ball& ball) {
+            std::ranges::for_each(detected, [](const table::Ball& ball) {
                 std::println(
                     "  ball {:>2} at row {:.0f}, col {:.0f}",
                     ball.number,
@@ -1163,37 +1365,37 @@ namespace {
             printScores(scores);
         }
 
-        std::vector<Score> evaluateTable(
+        std::vector<scoring::Score> evaluateTable(
             const table::Image& table,
-            const detection::AllBallsMeasurements& measurements
+            const measurement::AllBallsMeasurements& measurements
         ) {
             const auto detected = detection::detectBalls(table, measurements);
-            const auto scores = scoreDistances(table, detected);
+            const auto scores = scoring::scoreDistances(table, detected);
             printResults(table, detected, scores);
             return scores;
         }
 
         void evaluateTables(
             const std::vector<table::Image>& tables,
-            const detection::AllBallsMeasurements& measurements
+            const measurement::AllBallsMeasurements& measurements
         ) {
             const auto scores = tables
                 | views::transform(std::bind_back(evaluateTable, std::cref(measurements)))
                 | std::ranges::to<std::vector>();
 
             std::println("Total");
-            printScores(sumScores(scores));
+            printScores(scoring::sumScores(scores));
         }
     }
 }
 
 void MyApplication() {
     const auto result =
-        table::loadImage(table::PHOTO_DIRECTORY, detection::REFERENCE_PHOTO)
-            .transform(detection::measureAllBallsPhoto)
-            .and_then([](const detection::AllBallsMeasurements& measurements) {
-                return table::loadImages(table::PHOTO_DIRECTORY, evaluation::TABLE_PHOTOS)
-                    .transform(std::bind_back(evaluation::evaluateTables, std::cref(measurements)));
+        table::loadImage(table::PHOTO_DIRECTORY, measurement::REFERENCE_PHOTO)
+            .transform(measurement::measureAllBallsPhoto)
+            .and_then([](const measurement::AllBallsMeasurements& measurements) {
+                return table::loadImages(table::PHOTO_DIRECTORY, scoring::TABLE_PHOTOS)
+                    .transform(std::bind_back(reporting::evaluateTables, std::cref(measurements)));
             });
 
     if (!result) {

@@ -69,11 +69,20 @@ namespace {
         }
 
         Result<std::vector<AugmentedSample>> loadSamples(const fs::path& directory) {
-            return fs::directory_iterator(directory)
-                | views::transform([](const fs::directory_entry& entry) { return entry.path(); })
-                | views::filter([](const fs::path& path) { return path.extension() == ".yml"; })
-                | views::transform(readSample)
-                | collectResults;
+            std::vector<AugmentedSample> samples;
+            for (const auto& entry : fs::directory_iterator(directory)) {
+                if (entry.path().extension() != ".yml") {
+                    continue;
+                }
+
+                auto sample = readSample(entry.path());
+                if (!sample) {
+                    return std::unexpected(sample.error());
+                }
+
+                samples.push_back(std::move(*sample));
+            }
+            return samples;
         }
     }
 
@@ -82,18 +91,20 @@ namespace {
 
         cv::Mat_<int> buildIdentificationConfusion(
             const table::Image& table,
-            const detection::AllBallsMeasurements& measurements
+            const measurement::AllBallsMeasurements& measurements
         ) {
             const auto positions = table.truth
                 | views::transform(&table::Ball::position)
                 | std::ranges::to<std::vector>();
 
             cv::Mat_<int> confusion = cv::Mat_<int>::zeros(BALL_COUNT, BALL_COUNT);
-            views::zip(table.truth, detection::identifyBalls(table, positions, measurements))
-                | forEach([&](const auto& pair) {
-                      const auto& [truth, identified] = pair;
-                      ++confusion(truth.number, identified.number);
-                  });
+            std::ranges::for_each(
+                views::zip(table.truth, detection::identifyBalls(table, positions, measurements)),
+                [&](const auto& pair) {
+                    const auto& [truth, identified] = pair;
+                    ++confusion(truth.number, identified.number);
+                }
+            );
 
             return confusion;
         }
@@ -113,7 +124,7 @@ namespace {
             const auto total = static_cast<std::ptrdiff_t>(cv::sum(confusion)[0]);
 
             return std::format(
-                "{}/{} ({})", correct, total, evaluation::formatRatio(correct, total)
+                "{}/{} ({})", correct, total, reporting::formatRatio(correct, total)
             );
         }
 
@@ -137,14 +148,14 @@ namespace {
                     | views::join
                     | std::ranges::to<std::string>()
             );
-            views::iota(0, BALL_COUNT) | forEach([&](int row) {
+            std::ranges::for_each(views::iota(0, BALL_COUNT), [&](int row) {
                 std::println("{:>3} {}", row, formatMatrixRow(counts, row));
             });
         }
 
         void printTables(
             const std::vector<table::Image>& tables,
-            const detection::AllBallsMeasurements& measurements
+            const measurement::AllBallsMeasurements& measurements
         ) {
             const cv::Mat_<int> confusion =
                 sumConfusions(tables | views::transform([&](const table::Image& table) {
@@ -158,15 +169,15 @@ namespace {
         }
     }
 
-    std::string formatSummary(const std::vector<evaluation::Score>& scores) {
-        return views::zip(evaluation::MATCH_DISTANCES, scores)
+    std::string formatSummary(const std::vector<scoring::Score>& scores) {
+        return views::zip(scoring::MATCH_DISTANCES, scores)
             | views::transform([](const auto& pair) {
                    const auto& [distance, score] = pair;
                    return std::format(
                        "{:>4} px: F1 {}, identified {}",
                        distance,
-                       evaluation::formatF1(score),
-                       evaluation::formatRatio(score.identified, score.found)
+                       reporting::formatF1(score),
+                       reporting::formatRatio(score.identified, score.found)
                    );
                })
             | views::join_with(std::string_view("   "))
@@ -175,13 +186,13 @@ namespace {
 
     void printLevelSummary(
         const auto& level_samples,
-        const detection::AllBallsMeasurements& measurements
+        const measurement::AllBallsMeasurements& measurements
     ) {
         const auto scores = level_samples
             | views::transform([&](const auto& sample) {
                                 const auto detected =
                                     detection::detectBalls(sample.table, measurements);
-                                return evaluation::scoreDistances(sample.table, detected);
+                                return scoring::scoreDistances(sample.table, detected);
                             })
             | std::ranges::to<std::vector>();
 
@@ -196,7 +207,7 @@ namespace {
             "{:<20} {}   {}   labelled {}",
             first.distortion,
             first.level,
-            formatSummary(evaluation::sumScores(scores)),
+            formatSummary(scoring::sumScores(scores)),
             labelled::formatAccuracy(confusion)
         );
     }
@@ -207,24 +218,25 @@ namespace {
 
     void evaluateSamples(
         std::vector<augmented::AugmentedSample> samples,
-        const detection::AllBallsMeasurements& measurements
+        const measurement::AllBallsMeasurements& measurements
     ) {
         std::println("loaded {} samples", samples.size());
         std::ranges::sort(samples, {}, identifyLevel);
-        samples
-            | views::chunk_by([](const auto& left, const auto& right) {
-                  return identifyLevel(left) == identifyLevel(right);
-              })
-            | forEach([&](const auto& group) { printLevelSummary(group, measurements); });
+        std::ranges::for_each(
+            samples | views::chunk_by([](const auto& left, const auto& right) {
+                return identifyLevel(left) == identifyLevel(right);
+            }),
+            [&](const auto& group) { printLevelSummary(group, measurements); }
+        );
     }
 
     const fs::path POOL_DIRECTORY = "OpenCVExample" / table::PHOTO_DIRECTORY;
 
     Result<void> evaluateAugmented() {
-        return table::loadImage(POOL_DIRECTORY, detection::REFERENCE_PHOTO)
-            .transform(detection::measureAllBallsPhoto)
-            .and_then([](const detection::AllBallsMeasurements& measurements) {
-                return table::loadImages(POOL_DIRECTORY, evaluation::TABLE_PHOTOS)
+        return table::loadImage(POOL_DIRECTORY, measurement::REFERENCE_PHOTO)
+            .transform(measurement::measureAllBallsPhoto)
+            .and_then([](const measurement::AllBallsMeasurements& measurements) {
+                return table::loadImages(POOL_DIRECTORY, scoring::TABLE_PHOTOS)
                     .transform(std::bind_back(labelled::printTables, std::cref(measurements)))
                     .and_then([&] {
                         return augmented::loadSamples(augmented::SAMPLE_DIRECTORY)
