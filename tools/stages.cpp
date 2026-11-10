@@ -326,11 +326,266 @@ namespace {
                 });
         }
     }
+
+    namespace analysis {
+        const cv::Scalar GOOD_COLOUR = {0, 255, 0};
+        const cv::Scalar FAIR_COLOUR = {0, 255, 255};
+        const cv::Scalar POOR_COLOUR = {0, 0, 255};
+        const cv::Scalar LABEL_DOT_COLOUR = {255, 0, 255};
+        const cv::Scalar BACKGROUND_COLOUR = {255, 255, 255};
+        const cv::Scalar RING_COLOUR = {160, 160, 160};
+        const cv::Scalar POINT_COLOUR = {200, 80, 0};
+        constexpr int LABEL_DOT_RADIUS = 6;
+        constexpr int PLOT_SIZE = 600;
+        constexpr int POINT_RADIUS = 4;
+        constexpr float PLOT_SCALE = 12.0F;
+        const std::string RESULT_PREFIX = "results-";
+        const std::string ERROR_FIGURE = "error-vectors";
+
+        struct PhotoAnalysis {
+            drawing::Figure overlay;
+            std::vector<cv::Point2f> offsets;
+        };
+
+        const cv::Scalar& pickTierColour(double distance) {
+            if (distance < scoring::MATCH_DISTANCES[0]) {
+                return GOOD_COLOUR;
+            }
+
+            if (distance < scoring::MATCH_DISTANCES[1]) {
+                return FAIR_COLOUR;
+            }
+
+            return POOR_COLOUR;
+        }
+
+        cv::Mat drawMatches(
+            const table::Image& table,
+            const std::vector<table::Ball>& detected,
+            const std::vector<detection::Match>& matches
+        ) {
+            cv::Mat drawn = drawing::drawTableCircles(
+                table.image,
+                detected
+                    | views::transform(&table::Ball::position)
+                    | std::ranges::to<std::vector>(),
+                POOR_COLOUR
+            );
+
+            std::ranges::for_each(matches, [&](const detection::Match& match) {
+                cv::circle(
+                    drawn,
+                    cv::Point(detected[match.detection].position),
+                    table::BALL_DIAMETER / 2,
+                    pickTierColour(match.distance),
+                    drawing::OUTLINE_THICKNESS
+                );
+            });
+
+            std::ranges::for_each(table.truth, [&](const table::Ball& label) {
+                cv::circle(
+                    drawn, cv::Point(label.position), LABEL_DOT_RADIUS, LABEL_DOT_COLOUR, cv::FILLED
+                );
+            });
+
+            return drawn;
+        }
+
+        std::vector<cv::Point2f> measureOffsets(
+            const table::Image& table,
+            const std::vector<table::Ball>& detected,
+            const std::vector<detection::Match>& matches
+        ) {
+            return matches
+                | views::transform([&](const detection::Match& match) {
+                       return detected[match.detection].position
+                           - table.truth[match.label].position;
+                   })
+                | std::ranges::to<std::vector>();
+        }
+
+        void printMatches(
+            const table::Image& table,
+            const std::vector<table::Ball>& detected,
+            const std::vector<detection::Match>& matches
+        ) {
+            std::ranges::for_each(matches, [&](const detection::Match& match) {
+                const cv::Point2f offset =
+                    detected[match.detection].position - table.truth[match.label].position;
+                std::println(
+                    "{} ball {:>2} offset x {:+.1f} y {:+.1f} distance {:.1f}",
+                    table.name,
+                    table.truth[match.label].number,
+                    offset.x,
+                    offset.y,
+                    match.distance
+                );
+            });
+        }
+
+        void printNearest(
+            const std::string& stage,
+            const std::vector<cv::Point2f>& centres,
+            const std::vector<table::Ball>& truth
+        ) {
+            std::ranges::for_each(truth, [&](const table::Ball& label) {
+                if (centres.empty()) {
+                    std::println("{:>8} ball {:>2} none", stage, label.number);
+                    return;
+                }
+
+                const auto distance = [&](cv::Point2f centre) {
+                    return cv::norm(centre - label.position);
+                };
+                const cv::Point2f nearest = *std::ranges::min_element(centres, {}, distance);
+                const cv::Point2f offset = nearest - label.position;
+                std::println(
+                    "{:>8} ball {:>2} offset x {:+6.1f} y {:+6.1f} distance {:6.1f}",
+                    stage,
+                    label.number,
+                    offset.x,
+                    offset.y,
+                    distance(nearest)
+                );
+            });
+        }
+
+        void diagnoseTable(
+            const table::Image& image,
+            const measurement::AllBallsMeasurements& measurements
+        ) {
+            cv::Mat smoothed;
+            cv::medianBlur(image.image, smoothed, colour::SMOOTHING_SIZE);
+
+            cv::Mat hls;
+            cv::cvtColor(smoothed, hls, cv::COLOR_BGR2HLS);
+
+            const cv::Mat foreground = colour::segmentNonCloth(hls, measurements.cloth_histogram);
+            const cv::Mat relative = colour::measureRelativeLab(smoothed, foreground);
+            const cv::Mat balls =
+                foreground & ~detection::subtractBackground(relative, measurements);
+
+            const circles::EdgeImage edges = circles::detectPhotoEdges(relative);
+            const auto candidates = circles::scanHoughBands(edges);
+            const auto kept =
+                circles::keepCirclesOverBalls(candidates, balls, measurements.ball_size);
+            const auto selected = refinement::selectExplainingAway(edges.edges, kept);
+            const auto refined =
+                selected
+                | views::transform(
+                    std::bind_front(refinement::refineByRansac, std::cref(edges.edges))
+                )
+                | std::ranges::to<std::vector>();
+
+            std::println("{}", image.name);
+            printNearest("hough", drawing::mapCirclesToTable(candidates), image.truth);
+            printNearest("kept", drawing::mapCirclesToTable(kept), image.truth);
+            printNearest("selected", drawing::mapCirclesToTable(selected), image.truth);
+            printNearest("refined", drawing::mapCirclesToTable(refined), image.truth);
+        }
+
+        Result<void> diagnoseStages() {
+            return table::loadImage(walkthrough::POOL_DIRECTORY, measurement::REFERENCE_PHOTO)
+                .transform(measurement::measureAllBallsPhoto)
+                .and_then([](const measurement::AllBallsMeasurements& measurements) {
+                    return table::loadImages(walkthrough::POOL_DIRECTORY, scoring::TABLE_PHOTOS)
+                        .transform([&](const std::vector<table::Image>& tables) {
+                            std::ranges::for_each(
+                                tables,
+                                [&](const table::Image& image) {
+                                    diagnoseTable(image, measurements);
+                                }
+                            );
+                        });
+                });
+        }
+
+        PhotoAnalysis analysePhoto(
+            const table::Image& table,
+            const measurement::AllBallsMeasurements& measurements
+        ) {
+            const auto detected = detection::detectBalls(table, measurements);
+            const auto matches = detection::matchGreedily(
+                scoring::listCandidates(detected, table.truth, scoring::MATCH_DISTANCES.back())
+            );
+            printMatches(table, detected, matches);
+
+            return {
+                .overlay =
+                    {RESULT_PREFIX + fs::path(table.name).stem().string(),
+                     drawMatches(table, detected, matches)},
+                .offsets = measureOffsets(table, detected, matches)
+            };
+        }
+
+        cv::Mat renderErrorPlot(const std::vector<cv::Point2f>& offsets) {
+            const cv::Point centre(PLOT_SIZE / 2, PLOT_SIZE / 2);
+            cv::Mat plot(PLOT_SIZE, PLOT_SIZE, CV_8UC3, BACKGROUND_COLOUR);
+
+            cv::line(plot, {0, centre.y}, {PLOT_SIZE, centre.y}, RING_COLOUR);
+            cv::line(plot, {centre.x, 0}, {centre.x, PLOT_SIZE}, RING_COLOUR);
+
+            std::ranges::for_each(scoring::MATCH_DISTANCES, [&](float distance) {
+                cv::circle(plot, centre, cvRound(distance * PLOT_SCALE), RING_COLOUR);
+            });
+
+            std::ranges::for_each(offsets, [&](cv::Point2f offset) {
+                cv::circle(
+                    plot,
+                    centre + cv::Point(offset * PLOT_SCALE),
+                    POINT_RADIUS,
+                    POINT_COLOUR,
+                    cv::FILLED
+                );
+            });
+
+            return plot;
+        }
+
+        void printMeanOffset(const std::vector<cv::Point2f>& offsets) {
+            const cv::Point2f mean = std::ranges::fold_left(offsets, cv::Point2f{}, std::plus<>{})
+                / static_cast<float>(offsets.size());
+            std::println("mean offset x {:+.2f} y {:+.2f}", mean.x, mean.y);
+        }
+
+        Result<void> saveAnalyses(const std::vector<PhotoAnalysis>& analyses) {
+            const auto offsets = analyses
+                | views::transform(&PhotoAnalysis::offsets)
+                | views::join
+                | std::ranges::to<std::vector>();
+            printMeanOffset(offsets);
+
+            auto figures = analyses
+                | views::transform(&PhotoAnalysis::overlay)
+                | std::ranges::to<std::vector>();
+            figures.push_back({ERROR_FIGURE, renderErrorPlot(offsets)});
+
+            return walkthrough::saveFigures(figures);
+        }
+
+        Result<void> generateResultFigures() {
+            return table::loadImage(walkthrough::POOL_DIRECTORY, measurement::REFERENCE_PHOTO)
+                .transform(measurement::measureAllBallsPhoto)
+                .and_then([](const measurement::AllBallsMeasurements& measurements) {
+                    return table::loadImages(walkthrough::POOL_DIRECTORY, scoring::TABLE_PHOTOS)
+                        .transform([&](const std::vector<table::Image>& tables) {
+                            return tables
+                                | views::transform(
+                                       std::bind_back(analysePhoto, std::cref(measurements))
+                                )
+                                | std::ranges::to<std::vector>();
+                        })
+                        .and_then(saveAnalyses);
+                });
+        }
+    }
 }
 
 int main() {
     try {
-        const auto result = walkthrough::generateFigures();
+        const auto result = walkthrough::generateFigures()
+                                .and_then(analysis::generateResultFigures)
+                                .and_then(analysis::diagnoseStages);
         if (!result) {
             std::println(stderr, "{}", result.error());
             return 1;

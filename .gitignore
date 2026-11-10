@@ -13,3 +13,11 @@ compile_commands.json
 
 data/augmented
 .cache
+
+# LaTeX build output; the .org and .pdf are kept
+*.aux
+*.fdb_latexmk
+*.fls
+*.out
+*.tex
+*.toc
