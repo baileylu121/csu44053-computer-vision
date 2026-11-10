@@ -1,0 +1,61 @@
+:PROPERTIES:
+:ID:       report-outline
+:END:
+#+title: Report Outline
+#+author: Luke Bailey
+
+Below is my report on the methods I applied during image analysis on a pool ball table where the pool balls appeared in a variety of different positions. My goals were twofold:
+
+- Find the balls: I had to locate the position of each ball on the table and return their position as coordinates
+
+- Identify the balls: After finding the balls, I then had to identify each ball as its assigned number (or the white ball).
+
+The assignment brief made it clear to me how much I should focus on evaluation and the metrics I pick as one of the primary goals of this project right from the get go. As a result, before even writing a single line of code I started by first figuring out how I was going to evaluate this work.
+
+The primary metrics I selected were all ones I recalled from prior lectures. I opted for:
+- Precision (the fraction of detections that were real balls)
+- Recall (the fraction of real balls that were found)
+- F1 (the harmonic mean of precision and recall)
+- Identification Accuracy (the fraction of correctly located balls that got identified with the right number)
+
+I was also aware that my submitted application code would likely be evaluated against more permutations of the pool table than I had access to based on the small sample amount provided in the assignment. Hence, in order to increase the generality of my code, I also decided to write an external wrapper harness around what I would submit in order to test my code against further augmented versions of the original test set, doing things like mirroring the original images, applying extra noise, playing with saturation values, and more in order to try and make my code resilient to unexpected changes.
+
+After all of this, I could then plan what algorithm I would actually implement in my vision processing system. I decided to plan a couple feasible variants since truthfully I wasn't too sure which would perform the best without measuring and evaluating them each in turn.
+
+* TODO Theory of the processing done (roughly 50%).
+
+Here, I will only describe the final algorithm I landed on.
+
+** TODO You must describe the underlying theory of what you have done. You MUST not refer to code or library calls in the report.
+
+First of all, I noticed that the pool table appears at a slight angle from the camera and decided it would probably be in my best interests to do a perspective transform in order to get a more head on view. In this step I also crop part of the background just in case anything appears there that could interfere. To do this I used the table corners that were provided as the corner points.
+
+Next, since the table cloth is not one solid colour, but rather a textured object, I decided to denoise it a bit by applying a median blur to make it easier to separate the balls from the pool table cloth later on.
+
+I then produce a hue and saturation histogram for the cloth from the reference photo, as the lighting across the table isn't uniform and sampling hue and saturation means I can easily model the cloth first without interference from things like that.
+
+After that, I then segment the non cloth object by back-projecting that histogram, giving me a greyscale image where the cloth is bright and the balls are dark. Once I have that, I can then run Otsu thresholding in order to clearly separate those into a binary "not cloth" mask. Once I have that, I then do a morphological open in order to remove any small flecks/leftover artifacts of noise and ensure that what I end up with is actually mainly just balls.
+
+After that I converted this into a relative LAB image by subtrating the cloth's average colour, in order to accurately measure how different two colours (the cloth vs the balls) look, allowing me to meaningfully measure distance.
+
+With that, I then go and detect the photo edges with Canny, since it produces a number of thin, well located edges where the balls are. Using that edge map, I then run a hough transform in order to get approximate circle centers and radii for each ball. This also handles touching balls for me too.
+
+Once I have the data from hough, I then attempt to reject circles that aren't the balls (i.e. the cushions where balls go to score) by seeing if it lies too close to the table edge. I then also reduce it to a ball sized footprint by masking it with a ball image in order to filter things like shadows or the rest of the cushions.
+
+After that, I then refine the circles given to me by hough with RANSAC, which helps adjust the circle positions for noise and makes the important centre point location more accurate.
+
+After running that, I had enough data to calculate the centre of the balls accurately, hence locating them.
+
+Next, is the ball identification steps. In order to figure out which is which, I start by grabbing a HSV histogram, for which I have a separate one for each ball. Using the previous section's algorithms, I grabbed this for each ball and then using the Bhattacharyya distance, figure out how likely a given ball sourced from the picture is to the ball in the reference image. Once I have this distance figure, I then rank them and greedily assign the closest match for each ball towards its histogram.
+
+* TODO Results and analysis (roughly 50%).
+
+** TODO You must present results for the set of images.
+
+** TODO You must extensively illustrate both successes and failures (and provide an in-depth analysis of why failures have occurred).
+
+** TODO You must provide performance metrics including a full explanation of how they are computed.
+
+** TODO You must analyse the performance explaining what the results achieved mean.
+
+** TODO You must also analyse your approach in terms of robustness (in other circumstances as well as those tested), appropriateness, etc.  Make suggestions for how you could improve the robustness of the solution.
