@@ -17,3 +17,4 @@ executable(
 # Local tool for generating distorted test images; not part of the submission.
 executable('augment', 'tools/augment.cpp', dependencies: opencv)
 executable('evaluate', 'tools/evaluate.cpp', dependencies: opencv)
+executable('stages', 'tools/stages.cpp', dependencies: opencv)

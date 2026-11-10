@@ -3,6 +3,7 @@
 :END:
 #+title: Report Outline
 #+author: Luke Bailey
+#+LATEX_HEADER: \usepackage{float}
 
 Below is my report on the methods I applied during image analysis on a pool ball table where the pool balls appeared in a variety of different positions. My goals were twofold:
 
@@ -28,29 +29,100 @@ Here, I will only describe the final algorithm I landed on.
 
 ** TODO You must describe the underlying theory of what you have done. You MUST not refer to code or library calls in the report.
 
+#+CAPTION: The original photo, with the table outline used for the perspective correction.
+#+ATTR_ORG: :width 600
+#+ATTR_LATEX: :placement [H] :width 0.9\textwidth
+[[file:figures/01-photo.png]]
+
 First of all, I noticed that the pool table appears at a slight angle from the camera and decided it would probably be in my best interests to do a perspective transform in order to get a more head on view. In this step I also crop part of the background just in case anything appears there that could interfere. To do this I used the table corners that were provided as the corner points.
+
+
+#+CAPTION: The table after perspective correction.
+#+ATTR_ORG: :width 600
+#+ATTR_LATEX: :placement [H] :width 0.9\textwidth
+[[file:figures/02-perspective.png]]
 
 Next, since the table cloth is not one solid colour, but rather a textured object, I decided to denoise it a bit by applying a median blur to make it easier to separate the balls from the pool table cloth later on.
 
+#+CAPTION: The table after median blurring.
+#+ATTR_ORG: :width 600
+#+ATTR_LATEX: :placement [H] :width 0.9\textwidth
+[[file:figures/03-smoothed.png]]
+
 I then produce a hue and saturation histogram for the cloth from the reference photo, as the lighting across the table isn't uniform and sampling hue and saturation means I can easily model the cloth first without interference from things like that.
+
+#+CAPTION: The cloth's hue and saturation histogram: hue runs down, saturation runs across, and brighter means more common.
+#+ATTR_ORG: :width 300
+#+ATTR_LATEX: :placement [H] :width 0.4\textwidth
+[[file:figures/04-cloth-histogram.png]]
 
 After that, I then segment the non cloth object by back-projecting that histogram, giving me a greyscale image where the cloth is bright and the balls are dark. Once I have that, I can then run Otsu thresholding in order to clearly separate those into a binary "not cloth" mask. Once I have that, I then do a morphological open in order to remove any small flecks/leftover artifacts of noise and ensure that what I end up with is actually mainly just balls.
 
-After that I converted this into a relative LAB image by subtrating the cloth's average colour, in order to accurately measure how different two colours (the cloth vs the balls) look, allowing me to meaningfully measure distance.
+#+CAPTION: Back-projection of the cloth histogram: the cloth is bright and the balls are dark.
+#+ATTR_ORG: :width 600
+#+ATTR_LATEX: :placement [H] :width 0.9\textwidth
+[[file:figures/05-likelihood.png]]
 
-With that, I then go and detect the photo edges with Canny, since it produces a number of thin, well located edges where the balls are. Using that edge map, I then run a hough transform in order to get approximate circle centers and radii for each ball. This also handles touching balls for me too.
+#+CAPTION: The "not cloth" mask after Otsu thresholding and the morphological open.
+#+ATTR_ORG: :width 600
+#+ATTR_LATEX: :placement [H] :width 0.9\textwidth
+[[file:figures/06-foreground.png]]
 
-Once I have the data from hough, I then attempt to reject circles that aren't the balls (i.e. the cushions where balls go to score) by seeing if it lies too close to the table edge. I then also reduce it to a ball sized footprint by masking it with a ball image in order to filter things like shadows or the rest of the cushions.
+After that I converted this into a relative LAB image by subtracting the cloth's average colour, in order to accurately measure how different two colours (the cloth vs the balls) look, allowing me to meaningfully measure distance.
 
-After that, I then refine the circles given to me by hough with RANSAC, which helps adjust the circle positions for noise and makes the important centre point location more accurate.
+#+CAPTION: Colour distance from the cloth in LAB.
+#+ATTR_ORG: :width 600
+#+ATTR_LATEX: :placement [H] :width 0.9\textwidth
+[[file:figures/07-contrast.png]]
+
+With that, I then went and detected the photo edges with Canny, since it produces a number of thin, well located edges where the balls are. Using that edge map, I then ran a Hough transform in order to get approximate circle centers and radii for each ball. This also handles touching balls for me too. Both of these are run on the original image with no perspective transform since the balls will not appear as circles otherwise. I ran Hough in strips rather than all in one go as balls closer to the camera look bigger.
+
+#+CAPTION: Canny edges, in the original photo's perspective.
+#+ATTR_ORG: :width 600
+#+ATTR_LATEX: :placement [H] :width 0.9\textwidth
+[[file:figures/08-edges.png]]
+
+#+CAPTION: Candidate circles found by the Hough transform.
+#+ATTR_ORG: :width 600
+#+ATTR_LATEX: :placement [H] :width 0.9\textwidth
+[[file:figures/09-hough.png]]
+
+Once I have the data from Hough, I then attempt to reject circles that aren't the balls (i.e. the cushions where balls go to score) by seeing if it lies too close to the table edge. I then also reduce it to a ball sized footprint by masking it with a ball image taken from the reference in order to filter things like shadows or the rest of the cushions. Each remaining candidate is scored by how much of its outline lies on a detected edge.
+
+#+CAPTION: The ball mask: the "not cloth" pixels with the cushion removed.
+#+ATTR_ORG: :width 600
+#+ATTR_LATEX: :placement [H] :width 0.9\textwidth
+[[file:figures/10-ball-mask.png]]
+
+#+CAPTION: The circles that remain after the cushion and ball footprint checks.
+#+ATTR_ORG: :width 600
+#+ATTR_LATEX: :placement [H] :width 0.9\textwidth
+[[file:figures/11-kept.png]]
+
+After that, I then refine the circles given to me by Hough with RANSAC, which helps adjust the circle positions for noise and makes the important centre point location more accurate.
+
+#+CAPTION: The selected circles before (red) and after (green) RANSAC refinement.
+#+ATTR_ORG: :width 600
+#+ATTR_LATEX: :placement [H] :width 0.9\textwidth
+[[file:figures/12-refined.png]]
 
 After running that, I had enough data to calculate the centre of the balls accurately, hence locating them.
 
-Next, is the ball identification steps. In order to figure out which is which, I start by grabbing a HSV histogram, for which I have a separate one for each ball. Using the previous section's algorithms, I grabbed this for each ball and then using the Bhattacharyya distance, figure out how likely a given ball sourced from the picture is to the ball in the reference image. Once I have this distance figure, I then rank them and greedily assign the closest match for each ball towards its histogram.
+Next, is the ball identification steps. In order to figure out which is which, I start by grabbing a HSV histogram, for which I have a separate one for each ball. Using the previous section's algorithms, I grabbed this for each ball and then using the Bhattacharyya distance, figure out how far a given ball sourced from the picture is to the ball in the reference image. Once I have this distance figure, I then rank them and greedily assign the closest match for each ball towards its histogram.
 
-The parameters used at each stage are listed in [[tbl-params]].
+#+CAPTION: Hue and saturation histograms of the 16 reference balls, labelled by ball number.
+#+ATTR_ORG: :width 300
+#+ATTR_LATEX: :placement [H] :width 0.4\textwidth
+[[file:figures/13-ball-histograms.png]]
 
-#+NAME: tbl-params
+#+CAPTION: The final detected balls with their identified numbers.
+#+ATTR_ORG: :width 600
+#+ATTR_LATEX: :placement [H] :width 0.9\textwidth
+[[file:figures/14-identified.png]]
+
+The parameters used at each stage are listed in [[parameters-table][the parameters table]].
+
+#+NAME: parameters-table
 #+CAPTION: Parameters used at each stage of the pipeline.
 | Stage                  | Parameter                | Value                                         |
 |------------------------+--------------------------+-----------------------------------------------|
@@ -89,3 +161,12 @@ The parameters used at each stage are listed in [[tbl-params]].
 ** TODO You must analyse the performance explaining what the results achieved mean.
 
 ** TODO You must also analyse your approach in terms of robustness (in other circumstances as well as those tested), appropriateness, etc.  Make suggestions for how you could improve the robustness of the solution.
+
+* Figure generation :noexport:
+
+Run the block below with =C-c C-c= to rebuild every figure above from the real pipeline.
+
+#+NAME: generate-figures
+#+begin_src sh :results output silent :exports none
+ninja -C build stages && ./build/stages
+#+end_src
