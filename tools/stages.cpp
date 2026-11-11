@@ -1,4 +1,4 @@
-#include "../myApplication.cpp" // NOLINT(bugprone-suspicious-include)
+#include "../OpenCVExample/MyApplication.cpp" // NOLINT(bugprone-suspicious-include)
 
 #include <exception>
 #include <system_error>
@@ -490,12 +490,9 @@ namespace {
                 .and_then([](const measurement::AllBallsMeasurements& measurements) {
                     return table::loadImages(walkthrough::POOL_DIRECTORY, scoring::TABLE_PHOTOS)
                         .transform([&](const std::vector<table::Image>& tables) {
-                            std::ranges::for_each(
-                                tables,
-                                [&](const table::Image& image) {
-                                    diagnoseTable(image, measurements);
-                                }
-                            );
+                            std::ranges::for_each(tables, [&](const table::Image& image) {
+                                diagnoseTable(image, measurements);
+                            });
                         });
                 });
         }
@@ -512,8 +509,8 @@ namespace {
 
             return {
                 .overlay =
-                    {RESULT_PREFIX + fs::path(table.name).stem().string(),
-                     drawMatches(table, detected, matches)},
+                    {.name = RESULT_PREFIX + fs::path(table.name).stem().string(),
+                     .image = drawMatches(table, detected, matches)},
                 .offsets = measureOffsets(table, detected, matches)
             };
         }

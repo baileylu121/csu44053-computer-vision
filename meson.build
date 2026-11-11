@@ -9,7 +9,7 @@ opencv = dependency('opencv4')
 executable(
     'app',
     'main.cpp',
-    'myApplication.cpp',
+    'OpenCVExample/MyApplication.cpp',
     dependencies: opencv,
     install: true,
 )

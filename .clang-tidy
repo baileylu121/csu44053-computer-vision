@@ -5,6 +5,7 @@ Checks: >
   modernize-*,
   performance-*,
   readability-*,
+  -bugprone-easily-swappable-parameters,
   -cppcoreguidelines-avoid-magic-numbers,
   -readability-magic-numbers,
   -modernize-use-trailing-return-type,

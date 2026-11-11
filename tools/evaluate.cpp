@@ -1,4 +1,4 @@
-#include "../myApplication.cpp" // NOLINT(bugprone-suspicious-include)
+#include "../OpenCVExample/MyApplication.cpp" // NOLINT(bugprone-suspicious-include)
 
 #include <exception>
 #include <string_view>
