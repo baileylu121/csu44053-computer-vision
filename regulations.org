@@ -19,6 +19,10 @@
 #+LATEX_HEADER: \preauthor{\begin{center}\large}\postauthor{\par\end{center}\vspace{-1em}}
 #+LATEX_HEADER: \predate{}\postdate{}
 
+* GitHub repo
+
+https://github.com/baileylu121/csu44053-computer-vision
+
 * Engines used
 
 Claude Code (Anthropic).
