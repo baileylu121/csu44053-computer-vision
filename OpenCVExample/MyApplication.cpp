@@ -18,6 +18,7 @@
 #include <utility>
 #include <vector>
 
+// If this file gives you complation trouble you need at least C++ 23
 namespace {
     namespace fs = std::filesystem;
     namespace views = std::views;
