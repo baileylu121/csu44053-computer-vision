@@ -129,7 +129,7 @@ With that, I then went and detected the photo edges with Canny, since it produce
 
 *** Candidate filtering
 
-Once I have the data from Hough, I then attempt to reject circles that aren't the balls (i.e. the cushions where balls go to score) by seeing if it lies too close to the table edge. I then also reduce it to a ball sized footprint by masking it with a ball image taken from the reference in order to filter things like shadows or the rest of the cushions. Each remaining candidate is scored by how much of its outline lies on a detected edge.
+Once I have the data from Hough, I then attempt to reject circles that aren't the balls (i.e. the cushions where balls go to score) by seeing if it lies too close to the table edge. I then also reduce it to a ball sized footprint by masking it with a ball image taken from the reference in order to filter things like shadows or the rest of the cushions. Each remaining candidate is scored by how much of its outline lies on a detected edge. Before this, the ball mask removes the cushions, I mark the pixels connecting to the image border, compare them to the same pixels in the reference photo and drop those within 3 times the spread of the cloth colour.
 
 #+begin_figurerow
 #+ATTR_LATEX: :options {0.47}
@@ -161,7 +161,7 @@ After running that, I had enough data to calculate the centre of the balls accur
 
 ** Stage 2: Identifying the balls
 
-Next, is the ball identification steps. In order to figure out which is which, I start by grabbing a HSV histogram, for which I have a separate one for each ball. Using the previous section's algorithms, I grabbed this for each ball and then using the Bhattacharyya distance, figure out how far a given ball sourced from the picture is to the ball in the reference image. Once I have this distance figure, I then rank them and greedily assign the closest match for each ball towards its histogram.
+Next, is the ball identification steps. In order to figure out which is which, I start by grabbing a HSV histogram, for which I have a separate one for each ball (from the provided spreadsheet). Using the previous section's algorithms, I grabbed this for each ball and then using the Bhattacharyya distance, figure out how far a given ball sourced from the picture is to the ball in the reference image. Once I have this distance figure, I then rank them and greedily assign the closest match for each ball towards its histogram.
 
 #+begin_figurerow
 #+ATTR_LATEX: :options {0.24}
@@ -186,31 +186,33 @@ The parameters used at each stage are listed in [[parameters-table][the paramete
 
 #+NAME: parameters-table
 #+CAPTION: Parameters used at each stage of the pipeline.
-| Stage                  | Parameter                | Value                                         |
-|------------------------+--------------------------+-----------------------------------------------|
-| Perspective correction | Output size              | 1434 x 683 px                                 |
-|                        | Interpolation            | Bicubic                                       |
-| Median blur            | Kernel                   | 5 x 5                                         |
-| Cloth histogram        | Bins (hue x saturation)  | 16 x 16                                       |
-|                        | Ball exclusion radius    | 64 px                                         |
-|                        | Smoothing                | 3 x 3 Gaussian                                |
-| Segmentation           | Opening kernel           | 5 x 5 ellipse                                 |
-| Canny edges            | Pre-blur                 | 5 x 5 Gaussian                                |
-|                        | Upper threshold          | Larger of Otsu level and 6 x estimated noise  |
-|                        | Lower threshold          | Half the upper threshold                      |
-| Hough circles          | Strip height             | 43 px                                         |
-|                        | Radius range             | Expected radius, widened by 20%               |
-|                        | Minimum support          | 1/3 of the circumference                      |
-| Ball filtering         | Cushion margin           | 10 px                                         |
-|                        | Footprint size           | Median ball size from the reference photo     |
-|                        | Minimum ball pixels      | 50% of the footprint                          |
-| RANSAC                 | Iterations               | About 570                                     |
-|                        | Sample size              | 3 points                                      |
-|                        | Inlier tolerance         | 1.5 px                                        |
-|                        | Radius tolerance         | 20%                                           |
-|                        | Minimum support          | 1/3 of the circumference                      |
-| Identification         | Bins (hue x sat x value) | 16 x 8 x 8                                    |
-|                        | Pre-blur                 | 5 x 5 median                                  |
+| Stage                  | Parameter                | Value                                        |
+|------------------------+--------------------------+----------------------------------------------|
+| Perspective correction | Output size              | 1434 x 683 px                                |
+|                        | Interpolation            | Bicubic                                      |
+| Median blur            | Kernel                   | 5 x 5                                        |
+| Cloth histogram        | Bins (hue x saturation)  | 16 x 16                                      |
+|                        | Ball exclusion radius    | 64 px                                        |
+|                        | Smoothing                | 3 x 3 Gaussian                               |
+| Segmentation           | Opening kernel           | 5 x 5 ellipse                                |
+| Canny edges            | Pre-blur                 | 5 x 5 Gaussian                               |
+|                        | Upper threshold          | Larger of Otsu level and 6 x estimated noise |
+|                        | Lower threshold          | Half the upper threshold                     |
+| Hough circles          | Strip height             | 43 px                                        |
+|                        | Radius range             | Expected radius, widened by 20%              |
+|                        | Minimum support          | 1/3 of the circumference                     |
+| Ball filtering         | Cushion margin           | 10 px                                        |
+|                        | Footprint size           | Median ball size from the reference photo    |
+|                        | Minimum ball pixels      | 50% of the footprint                         |
+| Cushion removal        | Border components        | Connected to the image border                 |
+|                        | Colour tolerance         | 3 x cloth colour spread                       |
+| RANSAC                 | Iterations               | About 570                                    |
+|                        | Sample size              | 3 points                                     |
+|                        | Inlier tolerance         | 1.5 px                                       |
+|                        | Radius tolerance         | 20%                                          |
+|                        | Minimum support          | 1/3 of the circumference                     |
+| Identification         | Bins (hue x sat x value) | 16 x 8 x 8                                   |
+|                        | Pre-blur                 | 5 x 5 median                                 |
 
 * Results and Analysis
 
@@ -290,11 +292,11 @@ The results for each of the six photos are in [[results-table][the results table
 #+end_panel
 #+end_figurerow
 
-Table 2 happened to get the best strictest distance as it's Hough circles were almost all calculated within 25% of radius properly.
+Table 2 happened to get the best strictest distance as its Hough circles were almost all calculated within 25% of radius properly.
 
 *** Worst case
 
-Table 6 got the worst strictest distance, but every ball was still found and identified correctly within 50% of a ball radius. The six balls that did miss all miss at 25%, showing the limited of centre accuracy.
+Table 6 got the worst strictest distance, but every ball was still found and identified correctly within 50% of a ball radius. The six balls that did miss all miss at 25%, showing the limited accuracy.
 
 *** Localisation error
 
@@ -303,7 +305,7 @@ Table 6 got the worst strictest distance, but every ball was still found and ide
 #+ATTR_LATEX: :placement [!htbp] :width 0.4\textwidth
 [[file:figures/error-vectors.png]]
 
-This plot shows how close each ball was when found by the detection system vs its label. From this we can conclude there's no clear bias since they don't all shift in one direction, we have a taller spread implying that the likely the perspective transform slightly disproportionately effected the verticals when opposed to the horizontals, and that the majority of the balls were able to be accurately detected, even inside of 25% of a ball radius.
+This plot shows how close each ball was when found by the detection system vs its label. From this we can conclude there's no clear bias since they don't all shift in one direction, we have a taller spread implying that the likely the perspective transform slightly disproportionately affected the verticals when opposed to the horizontals, and that the majority of the balls were able to be accurately detected, even inside of 25% of a ball radius.
 
 ** Discussion
 
@@ -328,7 +330,7 @@ In order to check the robustness of my system in the face of varying conditions,
 - Cast shadow
 - Glare
 
-After running through all of these, finding the balls seemed to hold up quite well, however identifying whichh ball was which was what seemed to fail. This is likely because I applied an number of transformations which effect the histograms used to measure which ball is which, which is a weakness of my system.
+After running through all of these, finding the balls seemed to hold up quite well, however identifying which ball was which was what seemed to fail. This is likely because I applied a number of transformations which effect the histograms used to measure which ball is which, which is a weakness of my system.
 
 * Acknowledgements and use of generative AI
 
