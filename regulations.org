@@ -1,0 +1,90 @@
+:PROPERTIES:
+:ID:       regulations
+:END:
+#+title: Use of Generative AI
+#+author: Luke Bailey
+#+OPTIONS: toc:nil date:nil
+#+LATEX_CLASS_OPTIONS: [12pt,a4paper]
+#+LATEX_HEADER: \usepackage[margin=2.54cm]{geometry}
+#+LATEX_HEADER: \usepackage{newtxtext}
+#+LATEX_HEADER: \usepackage[compact]{titlesec}
+#+LATEX_HEADER: \titlespacing*{\section}{0pt}{1.2ex plus .3ex}{0.6ex}
+#+LATEX_HEADER: \titlespacing*{\subsection}{0pt}{1ex plus .2ex}{0.4ex}
+#+LATEX_HEADER: \titlespacing*{\subsubsection}{0pt}{0.8ex plus .2ex}{0.3ex}
+#+LATEX_HEADER: \usepackage{enumitem}
+#+LATEX_HEADER: \setlist{nosep}
+#+LATEX_HEADER: \usepackage{titling}
+#+LATEX_HEADER: \setlength{\droptitle}{-4em}
+#+LATEX_HEADER: \pretitle{\begin{center}\Large\bfseries}\posttitle{\par\end{center}\vspace{-1.5em}}
+#+LATEX_HEADER: \preauthor{\begin{center}\large}\postauthor{\par\end{center}\vspace{-1em}}
+#+LATEX_HEADER: \predate{}\postdate{}
+
+* Engines used
+
+Claude Code (Anthropic).
+
+* Design
+
+I used generative AI during the research and planning phase - it was useful for aggregating
+docs and to produce a coherent planning document for the process that I had in my head.
+
+* Coding
+
+I wrote the repository setup and general assignment setup/skeleton myself, choosing a build system and environment setup I was familiar with (nix, meson, C++ 26). Once I was happy with that and I had established a coding style, I felt comfortable to use coding agents in order to help me implement the algorithms I described to them faster, as they are able to write and refactor code to my will much faster
+than I would have been able to myself.
+
+I believe this led to a simple and nice looking railway oriented programming style for my submitting, making use of a Result monad and the recently added c++ views/ranges pipelines features to give my code a nice linear flow.
+
+* Testing
+
+I used coding agents to wrap the previous code in order to extend it to allow me to test over multiple transformed version of the images, rather than just the originals. Since this was not code I specifically had to submit, not was it required in the assignment, I was able to let them a little more loose on this as it's external to the core part of the assignment.
+
+* Report writing
+
+The report was hand written by me, and so were any in code docs. However, I did have AI proof read my report for any obvious mistakes.
+
+* Prompts
+
+Below are the prompts I entered into my coding agent during this assignment:
+
+** Session 1: 24 October to 7 November (Claude Opus 5.5)
+
+#+begin_quote
+ Reformat assignment.txt to org. Generate augmented images from the six table photos, then refactor augment.cpp: classes with RAII, two-word verb-first names, article-style ordering, range pipelines in place of loops, a rustfmt-like clang-tidy style, cv::CommandLineParser, reproducible output, a simpler design, no comments, and reorganised functions. Settle the submission's C++ standard and ground-truth table, cut down the evaluation code (warping, matching, metrics, confusion matrix, CSV), correct the ground-truth offset, and use the TIPS image paths. I questioned several of your claims: the 43 mm ball size, "train" terminology, the IoU threshold source, and the external harness. Write a shared plan using a pasted plan-skill definition, with separate evaluation of matching rules, swappable algorithms, and names like correctTablePerspective and dataset. Finally, write a print-only stub and read the lecture PDFs.
+#+end_quote
+
+** Session 2: 6 November (Claude Haiku 5.5)
+
+#+begin_quote
+Name all binary build outputs I've accidentally staged so I can add them to .gitignore and trash them.
+#+end_quote
+
+** Session 4: 7 to 9 November (Claude Opus 5.5 and Claude Haiku 5.5)
+
+#+begin_quote
+Make scoreTable a clearer railway-oriented chain, use UPPER_CASE constants, turn on clang-tidy readability-identifier-naming, and add a temporary ball-position overlay so I can check detections by eye. Plan 3-5 algorithm pipelines; are you working in parallel worktrees? Spawn subagents for Hough variants (suggest 3-5, run them one by one, benchmark each against the current version), locator and identifier research, and a final identifier. Copy the results into the master working tree, stage them without committing, and remove the worktrees. I complained about an unwanted commit, asked why evaluate.cpp changed, and asked for a more specific name than ReferenceColours with no machine-learning connotation. Drop functions, cut line count, check whether OpenCV can replace hand-written code, and use the standard library over helpers (fold_left instead of a custom greedy helper); spawn subagents for simplification angles. Rename vague functions (measureSupport, listPixels, findNearest, drawEllipse, sampleRegion, countConfusion, verifyCircles and others), flatten TableSurface into AllBallsMeasurements, remove ForEach and CollectResults, group and space out constants, and turn operator+ on Score into a regular function. Don't run checks after every prompt, only when I ask; I rejected a "double check" you did anyway. I ran /simplify, asked for /code-review against the assignment spec, asked you to benchmark a variant against the current version, and asked why a diff with no code changes should be accepted.
+#+end_quote
+
+** Session 5: 9 November (Claude Opus 5.5)
+
+#+begin_quote
+Do you think I have completed the code part of this assignment to a reasonable degree? Add comments where a TODO would help. I then pasted a series of C++ functions, each with a TODO, and asked for the reasoning behind each: the hue/saturation channels (and whether C++ has a doc comment standard), the HSV bin counts, the non-cloth back-projection (how to explain it in course terms; that didn't explain the why), the border-component cushion filter, the Lab measurement, CLOTH_MARGIN, the ball-size, nearest-centre and own-ball-pixel functions, PHOTO_TABLE (how to document it), MAD noise and NORMAL_MAD (simpler plain English; MAD was never defined), the Hough, RANSAC, circle-fitting and explaining-away routines, CLOTH_SPREAD (where it comes from; I agreed it should be measured), background subtraction, greedy assignment, the match radii (change them to fractions of the ball radius, then reapply that), and the F1 formatter. I pasted the whole source file and asked "thoughts?".
+#+end_quote
+
+** Session 6: 10 November (Claude Sonnet 5.5 and Claude Haiku 5.5)
+
+#+begin_quote
+Visualise the pipeline in myApplication.cpp and render it as a diagram; make it clearer so I can describe the step after segmentNonCloth. Do my metrics come from the lecture notes, which slide lists them, and is Bhattacharyya distance in the slides? Check my ball data against the "Second correction" spreadsheet; is it a 100% match? Review my report-outline.org draft (pasted several times, with feedback bullets from an earlier review). Suggest a title and wording for a missing identification-accuracy metric and for the evaluation-method text, keeping feedback scoped to what I've written. Add the parameters to the report; you added extra prose, so revert that and redo it as a table. Use org babel to generate the figures from the real pipeline, make the figure label text black, and check all images were regenerated. Fix PDF figure placement and reduce margins. Format the results table from the program output and change the pixel-tolerance wording to percentages of ball radius. What is left to write and where? Does results and analysis need more prose, how should I cover it, and what should I write once there is a skeleton? Gitignore temporary LaTeX output while keeping the .org, PDF and images. Why was a background run slow?
+#+end_quote
+
+** Session 7: 10 November (Claude Opus 5.5)
+
+#+begin_quote
+Review the report outline I pasted (with report-outline.pdf, report-outline.org and assignment.org) and suggest how to lay it out with proper headings. Tidy my existing text structurally, grouping and retitling headings, without adding new prose or rewording mine more than necessary. Where I should elaborate, leave an empty heading with a TODO. Under the Metric computation TODO, suggest what I should write based on my code. Read my Claude history for this project and tell me what the pipeline variants were. For the Worst case section, what is missing and how else could I describe it? Is the Localisation error section OK? What is there to say in the Discussion? For Robustness and improvements, how about this, and then a simpler proposal for what to say. How should I give credit for generative AI use, given my AI usage paragraph? Finally, what do you think of the report?
+#+end_quote
+
+** Session 8: 10 November (Claude Opus 5.5, with Claude Haiku 5.5 subagents)
+
+#+begin_quote
+Rate my report against the assignment and tell me what I can improve. Configure the LaTeX output to meet the 8-page, 12pt limit, since it has a lot more whitespace than Word or Google Docs. Lay the figures out in a grid, and keep the title and author. What else did you want changed? Where does the requirement for a separate generative AI document come from? Create an empty regulations.org for me to fill out with matching formatting, and tell me what it expects for the design part. Have Haiku subagents go through my sessions on this repo and summarise each one so I can include it in the prompts section, formatted like a prompt.
+#+end_quote
